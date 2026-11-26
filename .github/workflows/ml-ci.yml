@@ -7,6 +7,7 @@ on:
   push:
     branches: [main]
     paths: ["ml/**", ".github/workflows/ml-*.yml"]
+  workflow_dispatch:   # rodar à mão; na main, o sucesso dispara o ml-cd
 
 jobs:
   tests:

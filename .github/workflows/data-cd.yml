@@ -5,11 +5,13 @@ on:
   push:
     branches: [main]
     paths: ["data/**", ".github/workflows/data-cd.yml"]
+  workflow_dispatch:
 
 concurrency: data-cd
 
 jobs:
   deploy:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: databricks
     defaults: {run: {working-directory: data}}
