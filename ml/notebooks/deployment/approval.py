@@ -2,7 +2,7 @@
 # MAGIC %md
 # MAGIC # Deployment job · 2. Aprovação
 # MAGIC
-# MAGIC Falha de propósito na primeira execução. O aprovador compara as versões (run `avaliacao_v<versão>` e
+# MAGIC Falha de propósito na primeira execução. O aprovador compara as versões (métricas `deploy_*` da versão e
 # MAGIC o processo de definição do champion no README) e clica em **Approve** na página da versão, que grava
 # MAGIC a tag `approval=Approved` e retoma o job a partir desta tarefa. A chave da tag é o nome da tarefa.
 

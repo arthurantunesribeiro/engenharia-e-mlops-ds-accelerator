@@ -306,7 +306,7 @@ explícita na UI. Ninguém executa a promoção com o próprio usuário: quem ex
 
 | Tarefa | O que faz |
 | --- | --- |
-| `evaluation` | pontua a versão nova **e o champion na mesma janela** (a validação mais recente da ABT atual), pelo PyFunc registrado; métricas na página da versão e a comparação na run `avaliacao_v<versão>` |
+| `evaluation` | pontua a versão nova **e o champion na mesma janela** (a validação mais recente da ABT atual), pelo PyFunc registrado; tudo na run de treino da versão (métricas `deploy_*`, também na página da versão) |
 | `approval` | falha até a versão ter a tag `approval=Approved`; o botão *Approve* grava a tag e retoma o job daqui |
 | `deployment` | move o `champion`, remove o `challenger` e troca a versão servida no endpoint |
 
@@ -334,14 +334,15 @@ calibração do MLflow usa intervalos de largura fixa; acima de 0,3 há pouca ge
 
 **Como comparar** (tudo na UI):
 
-1. Na página da versão (Unity Catalog › `credit_score` › versão), o painel do deployment job mostra em
-   que tarefa ele está, e a tag `avaliacao_run` aponta para a run de comparação.
-2. Na run `avaliacao_v<versão>`: métricas `nova_*` e `champion_*` lado a lado, na mesma janela, e as
-   tabelas `nova/` e `champion/` (`faixas.json`, `metrics_by_segment.json`).
+1. Na página da versão (Unity Catalog › `credit_score` › versão): o painel do deployment job mostra em
+   que tarefa ele está, e as métricas `deploy_*` da avaliação.
+2. Na run de treino da versão (link na página da versão): as métricas `deploy_nova_*` e
+   `deploy_champion_*` lado a lado, na mesma janela, e as tabelas em `deploy/nova/` e
+   `deploy/champion/` (`faixas.json`, `metrics_by_segment.json`).
 3. Para as curvas (calibração, lift, ROC), selecione no experimento as runs de treino das duas versões e
    use *Compare*. Essas são da validação de cada treino, em janelas diferentes: servem para tendência.
 
-**Critérios** (sobre a run `avaliacao_v<versão>`, salvo as curvas):
+**Critérios** (sobre as métricas `deploy_*`, salvo as curvas):
 
 1. **Calibração**: a curva segue a diagonal onde está o volume (scores baixos), e na `faixas.json` a
    inadimplência observada de cada faixa cai dentro do intervalo dela e sobe de A para E. O score é usado como probabilidade: é o critério principal.
