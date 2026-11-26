@@ -5,7 +5,8 @@ import math
 import pandas as pd
 import pytest
 
-from credit_score.model import RISK_BANDS, compute_metrics, ks, metrics_by_segment, risk_band
+from credit_score.evaluation import score_report, split_in_time
+from credit_score.model import RISK_BANDS, band_table, compute_metrics, ks, metrics_by_segment, risk_band
 
 
 def test_output_has_score_band_and_reasons(scored_model):
@@ -59,3 +60,35 @@ def test_metrics_by_segment_skips_segments_with_one_class():
     out = metrics_by_segment(df, [0.1, 0.2, 0.8, 0.9, 0.5, 0.5])
     assert out["segmento"].tolist() == ["a"]
     assert out.loc[0, "n"] == 4 and out.loc[0, "auc"] == 1.0
+
+
+def test_band_table_uses_the_risk_bands():
+    t = band_table([0, 0, 1, 1], [0.01, 0.02, 0.5, 0.6])
+    assert t["faixa"].tolist() == ["A", "E"]
+    assert t["limite_superior"].tolist() == pytest.approx([0.05, 1.0])
+    assert t["participacao"].tolist() == pytest.approx([0.5, 0.5])
+    assert t["taxa_observada"].tolist() == pytest.approx([0.0, 1.0])
+
+
+def test_split_in_time_drops_out_of_contract_and_validates_on_recent_rows(base):
+    abt = base.copy()
+    abt.loc[abt.index[0], "uso_limite"] = 7.0   # fora do contrato
+    train_df, valid_df = split_in_time(abt)
+    assert abt.index[0] not in train_df.index.union(valid_df.index)
+    assert train_df["data_ref"].max() < valid_df["data_ref"].min()
+    assert len(valid_df) == pytest.approx(0.25 * (len(abt) - 1), rel=0.05)
+
+
+def test_split_in_time_refuses_a_broken_abt(base):
+    abt = base.copy()
+    abt.loc[abt.index[:100], "uso_limite"] = 7.0
+    with pytest.raises(AssertionError, match="fora do contrato"):
+        split_in_time(abt)
+
+
+def test_score_report_has_metrics_segments_and_bands(base):
+    p = base["inadimplente_90d"] * 0.5 + 0.02
+    metrics, by_segment, bands = score_report(base, p)
+    assert metrics["auc"] == 1.0
+    assert set(by_segment["segmento"]) == set(base["segmento"])
+    assert set(bands["faixa"]) == {"A", "E"}

@@ -57,6 +57,7 @@ credit-score-mlops/
 │   │   ├── foundation.yml              #     schema main.credit_ml, experimento, modelo, anomaly detection
 │   │   ├── features.yml                #     job que dispara quando a ABT muda (features_cliente)
 │   │   ├── training.yml                #     job de treino, sob demanda
+│   │   ├── deployment.yml              #     deployment job: avaliação, aprovação na UI e deploy
 │   │   ├── scoring.yml                 #     job que dispara quando chegam propostas novas
 │   │   ├── monitoring.yml              #     job que dispara quando o modelo pontua (endpoint ou batch)
 │   │   ├── serving.py                  #     endpoint credit-score com a versão do alias champion
@@ -65,9 +66,11 @@ credit-score-mlops/
 │   │   ├── credit_score/               #     pacote de produção (wheel nos jobs; dentro do modelo registrado)
 │   │   ├── features/build_features.py  #     gold → features_cliente
 │   │   ├── training/train_register.py
+│   │   ├── deployment/                 #     evaluation.py, approval.py, deploy.py (tarefas do deployment job)
 │   │   ├── scoring/batch_scoring.py
 │   │   └── monitoring/                 #     build_inference_log.py, monitor_model.py
-│   ├── notebooks/                      #   query_endpoint, explore_scores, promote_model
+│   ├── scripts/connect_deployment_job.py #   liga o deployment job ao modelo (roda no ml-cd)
+│   ├── notebooks/                      #   query_endpoint, explore_scores
 │   └── tests/
 └── .github/workflows/                  # data-cd.yml · ml-ci.yml · ml-cd.yml
 ```
@@ -133,7 +136,10 @@ cd data && databricks bundle deploy && databricks bundle run source_simulation &
 cd ml && uv sync                              # cria ml/.venv com o pacote, os testes e o que o bundle importa
 databricks bundle deploy                       # sem champion nem tabela de inferência: avisa e pula endpoint e perfil
 databricks bundle run features                 # features_cliente; depois, cada atualização da ABT a refaz
-databricks bundle run training                 # registra o champion e grava a baseline
+uv run python scripts/connect_deployment_job.py   # liga o deployment job ao modelo (o ml-cd também faz)
+databricks bundle run training                 # registra a v1 como challenger e grava a baseline
+#   o deployment job dispara sozinho e para na aprovação: aprove a v1 na página da versão
+#   (Unity Catalog › credit_score › versão 1 › Approve); o deploy move o champion
 databricks bundle deploy                       # publica o endpoint (e a tabela de inferência)
 databricks bundle run batch_scoring
 databricks bundle run monitoring --only build_inference_log
@@ -141,8 +147,9 @@ databricks bundle deploy                       # cria o perfil de inferência
 #   pelo GitHub, os deploys são o ml-cd: rode-o manualmente (Actions › ml-cd › Run workflow) entre as etapas
 ```
 
-Daqui em diante, tudo dispara sozinho: arquivos novos na landing → ingestão → treino e scoring →
-monitoramento.
+Daqui em diante, dispara sozinho: arquivos novos na landing → ingestão → features e scoring →
+monitoramento. O treino é sob demanda, e cada versão nova dispara o deployment job, que espera a
+aprovação na UI.
 
 ---
 
@@ -268,7 +275,7 @@ em todos os caminhos, sem depender do ciclo do time de dados.
      política ou de público, e não de cada atualização da ABT, que quase nunca traz contratos novos com
      o alvo já observado. Contrato de entrada na ABT, nested runs, escolha pela log
      loss, validação por segmento, portão de AUC, **validação pré-deploy** do pacote, registro com
-     **express deployment** e alias (`champion` na primeira versão, `challenger` nas seguintes).
+     **express deployment** e alias `challenger`.
 2. **Deploy** (`bundle deploy`, feito pelo CD): `resources/serving.py` lê o alias `champion` e
    publica o endpoint `credit-score`, com tabela de inferência.
 3. **Scoring batch** (job `credit_batch_scoring`, disparado quando chegam propostas novas): as
@@ -287,9 +294,82 @@ em todos os caminhos, sem depender do ciclo do time de dados.
    - `src/monitoring/monitor_model.py`: pede o refresh do perfil, mede a taxa fora do contrato e
      transforma o drift em alertas.
    - `notebooks/explore_scores.py`: scores, quarentena, chamadas e drift.
-6. **Promoção** (`notebooks/promote_model.py`): compara `champion` e `challenger`, move o alias e
-   atualiza a versão servida no endpoint; o scoring batch usa a nova versão na próxima execução. O
-   próximo `bundle deploy` lê o mesmo `champion`, então não desfaz a troca.
+6. **Promoção** (deployment job `credit_deployment`, disparado por cada versão nova): avalia a versão
+   nova e o champion na mesma janela, para na aprovação até alguém aprovar na UI e então move o
+   `champion` e atualiza a versão servida no endpoint. Ver a [definição do champion](#definição-do-champion).
+
+### Definição do champion
+
+O treino é sob demanda e cada execução registra um `challenger`; ele só vira `champion` por aprovação
+explícita na UI. Ninguém executa a promoção com o próprio usuário: quem executa é o deployment job
+`credit_deployment` (MLflow 3), ligado ao modelo no Unity Catalog, que roda sozinho a cada versão nova:
+
+| Tarefa | O que faz |
+| --- | --- |
+| `evaluation` | pontua a versão nova **e o champion na mesma janela** (a validação mais recente da ABT atual), pelo PyFunc registrado; métricas na página da versão e a comparação na run `avaliacao_v<versão>` |
+| `approval` | falha até a versão ter a tag `approval=Approved`; o botão *Approve* grava a tag e retoma o job daqui |
+| `deployment` | move o `champion`, remove o `challenger` e troca a versão servida no endpoint |
+
+**Quando retreinar**: alerta do monitoramento (drift do score ou das entradas, taxa fora do contrato),
+mudança de política de crédito, de produto ou de público, ou safras novas com o alvo já observado.
+
+**O que cada treino deixa na run do candidato escolhido** (experimento `credit_score`, run filha
+apontada pela versão no Unity Catalog):
+
+| Onde | O quê |
+| --- | --- |
+| Métricas (`mlflow.models.evaluate`) | `log_loss`, `roc_auc`, `precision_recall_auc` e as de corte em 0,5 |
+| Métricas (nossas) | `ks`, `gini` |
+| `calibration_curve_plot.png` | probabilidade prevista × inadimplência observada |
+| `lift_curve_plot.png` | quanto risco se concentra no topo do score |
+| `roc_curve_plot.png`, `precision_recall_curve_plot.png` | ordenação do score |
+| `faixas.json` | volume, score médio e inadimplência observada por faixa A–E |
+| `metrics_by_segment.json` | as métricas por segmento |
+| `estimator` | o classificador do candidato (formato `mlflow.sklearn`, usado pela avaliação) |
+
+As métricas de corte em 0,5 (`accuracy_score`, `precision_score`, `recall_score`, `f1_score` e a matriz
+de confusão) não dizem nada aqui: a decisão é por faixa, e a inadimplência fica perto de 10%. A
+calibração do MLflow usa intervalos de largura fixa; acima de 0,3 há pouca gente em cada ponto, e a
+`faixas.json` complementa com a taxa observada por faixa.
+
+**Como comparar** (tudo na UI):
+
+1. Na página da versão (Unity Catalog › `credit_score` › versão), o painel do deployment job mostra em
+   que tarefa ele está, e a tag `avaliacao_run` aponta para a run de comparação.
+2. Na run `avaliacao_v<versão>`: métricas `nova_*` e `champion_*` lado a lado, na mesma janela, e as
+   tabelas `nova/` e `champion/` (`faixas.json`, `metrics_by_segment.json`).
+3. Para as curvas (calibração, lift, ROC), selecione no experimento as runs de treino das duas versões e
+   use *Compare*. Essas são da validação de cada treino, em janelas diferentes: servem para tendência.
+
+**Critérios** (sobre a run `avaliacao_v<versão>`, salvo as curvas):
+
+1. **Calibração**: a curva segue a diagonal onde está o volume (scores baixos), e na `faixas.json` a
+   inadimplência observada de cada faixa cai dentro do intervalo dela e sobe de A para E. O score é usado como probabilidade: é o critério principal.
+2. **Log loss** não maior que a do `champion`; **`roc_auc`** e **KS** sem queda relevante
+   (referência: 0,01 de AUC).
+3. **Lift**: o topo do score concentra pelo menos o mesmo risco.
+4. **Segmentos**: nenhum segmento piora de forma relevante, mesmo que o global melhore.
+5. **Distribuição por faixa**: mudanças grandes na participação de cada faixa mudam a aprovação; o
+   negócio precisa concordar antes.
+
+**Decisão**:
+
+- **Aprovar**: escreva na descrição da versão o motivo (o que pesou nos critérios) e clique em
+  *Approve* no painel do deployment job. O job retoma da aprovação e faz o deploy. A tag e o histórico
+  do job registram quem aprovou e quando.
+- **Rejeitar**: escreva o motivo na descrição, remova o alias `challenger` e cancele a execução do
+  job. A versão fica registrada como histórico, e nada muda em produção.
+
+**Quem pode o quê** (em produção):
+
+| Quem | Permissão |
+| --- | --- |
+| Service principal de ML | dono do modelo, dos jobs e do endpoint; o deployment job roda como ele (`run_as`) |
+| Aprovadores | `APPLY TAG` no modelo e `CAN MANAGE RUN` no `credit_deployment`; com governed tags, só eles aplicam a tag `approval` |
+| Time de modelagem | leitura no experimento e no modelo, `CAN MANAGE RUN` no `credit_training` |
+
+O job dispara com a credencial do dono do modelo, e quem cria versões no modelo executa código nele:
+`CREATE MODEL VERSION` fica só com o service principal.
 
 ### Como o código chega aos jobs
 

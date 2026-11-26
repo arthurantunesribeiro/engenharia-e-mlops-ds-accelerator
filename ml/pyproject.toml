@@ -17,11 +17,13 @@ dev = [
     "fastapi==0.115.12",   # servidor de scoring do MLflow nos testes do pacote do modelo
     "httpx==0.28.1",
     "pytest==8.3.5",
+    "matplotlib==3.10.0",   # curvas do mlflow.models.evaluate, como no ambiente dos jobs
 ]
 # deploy: o código Python do bundle (resources/*.py), lido pelo databricks bundle deploy
 bundle = [
     "databricks-bundles==1.24.0",
     "databricks-sdk==0.155.0",
+    "mlflow-skinny==3.17.2",   # scripts/connect_deployment_job.py
 ]
 
 [tool.uv]

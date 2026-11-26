@@ -24,6 +24,7 @@ variables:
         - ./dist/*.whl                       # o bundle troca pelo caminho absoluto da wheel no workspace
         - mlflow==3.17.2
         - databricks-sdk==0.155.0
+        - matplotlib==3.10.0                 # curvas do mlflow.models.evaluate no treino
 
 python:
   venv_path: .venv                           # criado por uv sync

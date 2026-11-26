@@ -1,0 +1,37 @@
+# Deployment job do modelo (MLflow 3): roda sozinho a cada versão nova de main.credit_ml.credit_score.
+#   evaluation  → a versão nova e o champion na mesma janela recente da ABT
+#   approval    → falha até alguém clicar em Approve na página da versão (tag approval=Approved)
+#   deployment  → move o champion e atualiza o endpoint
+# O bundle ainda não liga job e modelo: o ml-cd faz isso com scripts/connect_deployment_job.py.
+# O modelo passa model_name e model_version como parâmetros do job (não da tarefa).
+resources:
+  jobs:
+    deployment:
+      name: credit_deployment
+      max_concurrent_runs: 1                     # duas promoções ao mesmo tempo disputariam o alias
+      parameters:
+        - {name: model_name, default: main.credit_ml.credit_score}
+        - {name: model_version, default: ""}
+      environments:
+        - environment_key: default
+          spec: ${var.job_environment}
+      tasks:
+        - task_key: evaluation
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/deployment/evaluation.py
+            parameters: [--model_name, "{{job.parameters.model_name}}", --model_version, "{{job.parameters.model_version}}"]
+        - task_key: approval                     # o nome é a chave da tag de aprovação
+          depends_on: [{task_key: evaluation}]
+          environment_key: default
+          max_retries: 0                         # falhar é o esperado até a aprovação
+          disable_auto_optimization: true        # sem as tentativas automáticas do serverless
+          spark_python_task:
+            python_file: ../src/deployment/approval.py
+            parameters: [--model_name, "{{job.parameters.model_name}}", --model_version, "{{job.parameters.model_version}}"]
+        - task_key: deployment
+          depends_on: [{task_key: approval}]
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/deployment/deploy.py
+            parameters: [--model_name, "{{job.parameters.model_name}}", --model_version, "{{job.parameters.model_version}}"]

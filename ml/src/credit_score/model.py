@@ -77,6 +77,27 @@ def metrics_by_segment(df: pd.DataFrame, p, col: str = "segmento") -> pd.DataFra
     return pd.DataFrame(rows)
 
 
+def band_table(y, p) -> pd.DataFrame:
+    """Resume cada faixa de risco: volume, score médio e inadimplência observada.
+
+    Com as faixas bem definidas, a taxa observada sobe de A para E e fica dentro do intervalo da faixa.
+
+    Args:
+        y: Alvo observado (0 ou 1).
+        p: Probabilidade prevista.
+
+    Returns:
+        Uma linha por faixa presente: `faixa`, `limite_superior`, `n`, `participacao`, `score_medio`,
+        `taxa_observada`.
+    """
+    d = pd.DataFrame({"y": np.asarray(y), "p": np.asarray(p, dtype=float)})
+    d["faixa"] = [risk_band(v) for v in d["p"]]
+    t = d.groupby("faixa").agg(n=("y", "size"), score_medio=("p", "mean"), taxa_observada=("y", "mean")).reset_index()
+    t.insert(1, "limite_superior", t["faixa"].map({band: limit for limit, band in RISK_BANDS}).clip(upper=1.0))
+    t.insert(3, "participacao", t["n"] / len(d))
+    return t
+
+
 def train(df: pd.DataFrame, algorithm: str = "logistic", **params):
     """Treina e calibra o classificador: o score é usado como probabilidade, não só para ordenar.
 

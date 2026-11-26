@@ -29,3 +29,4 @@ jobs:
       - uses: databricks/setup-cli@v1.24.0   # mínimo exigido pelo databricks-bundles==1.24.0
       - run: uv sync --locked --only-group bundle --no-install-project   # ml/.venv, com o que o bundle importa
       - run: databricks bundle deploy
+      - run: uv run --no-sync python scripts/connect_deployment_job.py   # o bundle ainda não liga job e modelo

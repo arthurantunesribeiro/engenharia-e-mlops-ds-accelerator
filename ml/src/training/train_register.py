@@ -4,7 +4,8 @@
 2. Uma run pai com várias filhas; escolha pela log loss, porque o score é usado como probabilidade.
 3. Validação por segmento e portão de qualidade (AUC mínima).
 4. Log do PyFunc com dependências de versão exata e validação pré-deploy do pacote.
-5. Registro com express deployment e alias: a primeira versão vira `champion`, as seguintes `challenger`.
+5. Registro com express deployment e o alias `challenger`. A versão nova dispara o deployment job
+   (resources/deployment.yml): avaliação contra o champion, aprovação na UI e deploy.
 6. Baseline do data profiling: a validação pontuada pela versão registrada.
 """
 import json
@@ -13,6 +14,7 @@ import tempfile
 
 import joblib
 import mlflow
+import mlflow.sklearn
 import pandas as pd
 from mlflow.models import convert_input_example_to_serving_input, infer_signature, validate_serving_input
 from pyspark.sql import SparkSession
@@ -22,10 +24,11 @@ from pyspark.sql import SparkSession
 os.environ["MLFLOW_UV_AUTO_DETECT"] = "false"
 
 import credit_score
-from credit_score.contract import INPUT_CONTRACT, validate_inputs
+from credit_score.contract import INPUT_CONTRACT
+from credit_score.evaluation import split_in_time
 from credit_score.features import INPUT_COLUMNS, build_features
-from credit_score.model import (CreditScoreModel, CreditScorePyfunc, compute_metrics, metrics_by_segment,
-                                model_requirements, train)
+from credit_score.model import (TARGET, CreditScoreModel, CreditScorePyfunc, band_table, compute_metrics,
+                                metrics_by_segment, model_requirements, train)
 
 ABT_TABLE = "main.credit.gold_abt_credito"
 MODEL_NAME = "main.credit_ml.credit_score"
@@ -38,25 +41,25 @@ CANDIDATES = [
 ]
 
 
-def split_in_time(abt: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Aplica o contrato e separa treino (safras antigas) e validação (safras recentes).
+def log_evaluation(estimator, valid_df: pd.DataFrame) -> None:
+    """Avalia o candidato com o avaliador de classificação do MLflow e loga tudo na run ativa.
 
-    Dividir aleatoriamente dados com ordem no tempo vazaria o futuro para o treino.
+    O `mlflow.models.evaluate` grava as métricas (`roc_auc`, `log_loss`, `precision_recall_auc`...) e
+    as curvas ROC, precision-recall, de lift e de calibração. Ele só tem as probabilidades de um modelo
+    no formato `mlflow.sklearn`, então o estimador é logado assim na run do candidato. Junto vai a
+    tabela das faixas A–E, que é do negócio e o MLflow não tem.
 
     Args:
-        abt: ABT completa.
-
-    Returns:
-        Treino e validação.
-
-    Raises:
-        AssertionError: Se mais de 1% da ABT estiver fora do contrato de entrada.
+        estimator: Classificador calibrado do candidato.
+        valid_df: Base de validação.
     """
-    out = validate_inputs(abt).str.len() > 0
-    assert out.mean() < 0.01, f"{out.mean():.1%} da ABT fora do contrato: revisar o pipeline"
-    abt = abt[~out].sort_values("data_ref")
-    cutoff = abt["data_ref"].quantile(0.75)
-    return abt[abt["data_ref"] < cutoff], abt[abt["data_ref"] >= cutoff]
+    x = build_features(valid_df)
+    info = mlflow.sklearn.log_model(estimator, name="estimator", serialization_format="cloudpickle",
+                                    input_example=x.head(5))
+    mlflow.models.evaluate(
+        info.model_uri, x.assign(**{TARGET: valid_df[TARGET].to_numpy()}), targets=TARGET,
+        model_type="classifier", evaluator_config={"pos_label": 1, "log_model_explainability": False})
+    mlflow.log_table(band_table(valid_df[TARGET], estimator.predict_proba(x)[:, 1]), "faixas.json")
 
 
 def search(train_df: pd.DataFrame, valid_df: pd.DataFrame) -> dict:
@@ -79,9 +82,10 @@ def search(train_df: pd.DataFrame, valid_df: pd.DataFrame) -> dict:
             with mlflow.start_run(run_name=name, nested=True) as child:
                 estimator = train(train_df, algorithm, **params)
                 p = estimator.predict_proba(build_features(valid_df))[:, 1]
-                metrics = compute_metrics(valid_df["inadimplente_90d"], p)
+                metrics = compute_metrics(valid_df[TARGET], p)   # para a escolha e os portões
                 mlflow.log_params({"algorithm": algorithm, **params})
-                mlflow.log_metrics(metrics)
+                mlflow.log_metrics({k: metrics[k] for k in ("ks", "gini")})   # roc_auc e log_loss: evaluate
+                log_evaluation(estimator, valid_df)
                 by_segment = metrics_by_segment(valid_df, p)
                 mlflow.log_table(by_segment, "metrics_by_segment.json")
                 results.append({"run_id": child.info.run_id, "name": name, "estimator": estimator,
@@ -143,24 +147,20 @@ def validate_package(model_uri: str, example: pd.DataFrame) -> None:
     raise AssertionError("o pacote aceitou uma proposta fora do contrato: não registrar")
 
 
-def register(model_uri: str) -> tuple[str, str]:
-    """Registra com express deployment e define o alias.
+def register(model_uri: str) -> str:
+    """Registra com express deployment e marca a versão como `challenger`.
+
+    Só o deployment job, depois da aprovação, move o `champion` (inclusive na primeira versão).
 
     Args:
         model_uri: URI do modelo validado.
 
     Returns:
-        Versão registrada e alias atribuído.
+        Versão registrada.
     """
-    client = mlflow.MlflowClient()
     version = mlflow.register_model(model_uri, MODEL_NAME, env_pack="databricks_model_serving").version
-    try:
-        client.get_model_version_by_alias(MODEL_NAME, "champion")
-        alias = "challenger"
-    except mlflow.exceptions.MlflowException:
-        alias = "champion"
-    client.set_registered_model_alias(MODEL_NAME, alias, version)
-    return version, alias
+    mlflow.MlflowClient().set_registered_model_alias(MODEL_NAME, "challenger", version)
+    return version
 
 
 def main() -> None:
@@ -178,8 +178,8 @@ def main() -> None:
     example = valid_df[INPUT_COLUMNS].head(5)
     info = log_model(model, best["run_id"], example)
     validate_package(info.model_uri, example)
-    version, alias = register(info.model_uri)
-    print(f"{MODEL_NAME} v{version} registrada com o alias {alias}")
+    version = register(info.model_uri)
+    print(f"{MODEL_NAME} v{version} registrada como challenger: o deployment job avalia e aguarda aprovação")
 
     baseline = valid_df[INPUT_COLUMNS].join(model.score(valid_df[INPUT_COLUMNS])[["score", "faixa"]])
     (spark.createDataFrame(baseline.assign(versao_modelo=str(version)))
