@@ -6,6 +6,7 @@ resources:
       trigger:
         table_update:
           table_names: [main.credit_ml.scores_credito, main.credit_ml.credit_score_payload]
+          condition: ANY_UPDATED
           min_time_between_triggers_seconds: 3600
       environments:
         - environment_key: default
