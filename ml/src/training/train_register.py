@@ -154,8 +154,11 @@ def register(model_uri: str) -> tuple[str, str]:
     """
     client = mlflow.MlflowClient()
     version = mlflow.register_model(model_uri, MODEL_NAME, env_pack="databricks_model_serving").version
-    aliases = {a for mv in client.search_model_versions(f"name='{MODEL_NAME}'") for a in (mv.aliases or [])}
-    alias = "challenger" if "champion" in aliases else "champion"
+    try:
+        client.get_model_version_by_alias(MODEL_NAME, "champion")
+        alias = "challenger"
+    except mlflow.exceptions.MlflowException:
+        alias = "champion"
     client.set_registered_model_alias(MODEL_NAME, alias, version)
     return version, alias
 
