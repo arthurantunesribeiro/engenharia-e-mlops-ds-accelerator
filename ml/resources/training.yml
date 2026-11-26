@@ -1,20 +1,11 @@
-# Retreina quando o time de dados atualiza a ABT.
 resources:
   jobs:
     training:
       name: credit_training
-      trigger:
-        table_update:
-          table_names: [main.credit.gold_abt_credito]
-          wait_after_last_change_seconds: 300
       environments:
         - environment_key: default
           spec: ${var.job_environment}
       tasks:
-        - task_key: build_features
-          environment_key: default
-          spark_python_task: {python_file: ../src/features/build_features.py}
         - task_key: train_register
-          depends_on: [{task_key: build_features}]
           environment_key: default
           spark_python_task: {python_file: ../src/training/train_register.py}

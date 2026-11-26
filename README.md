@@ -55,7 +55,8 @@ credit-score-mlops/
 │   ├── pyproject.toml                  #   o pacote credit_score
 │   ├── resources/
 │   │   ├── foundation.yml              #     schema main.credit_ml, experimento, modelo, anomaly detection
-│   │   ├── training.yml                #     job que dispara quando a ABT muda
+│   │   ├── features.yml                #     job que dispara quando a ABT muda (features_cliente)
+│   │   ├── training.yml                #     job de treino, sob demanda
 │   │   ├── scoring.yml                 #     job que dispara quando chegam propostas novas
 │   │   ├── monitoring.yml              #     job que dispara quando o modelo pontua (endpoint ou batch)
 │   │   ├── serving.py                  #     endpoint credit-score com a versão do alias champion
@@ -88,7 +89,8 @@ flowchart LR
     end
 
     subgraph ML["Time de ML · ml/ · aula 2"]
-        training["credit_training"]
+        features["credit_features"]
+        training["credit_training<br/>sob demanda"]
         champion{{"alias champion"}}
         endpoint["endpoint credit-score"]
         scoring["credit_batch_scoring"]
@@ -106,7 +108,8 @@ flowchart LR
         monitoring --> profiling
     end
 
-    abt -- "atualização da tabela" --> training
+    abt -- "atualização da tabela" --> features
+    abt -. "lida no retreino" .-> training
     pending -- "atualização da tabela" --> scoring
 ```
 
@@ -129,6 +132,7 @@ cd data && databricks bundle deploy && databricks bundle run source_simulation &
 
 cd ml && uv sync                              # cria ml/.venv com o pacote, os testes e o que o bundle importa
 databricks bundle deploy                       # sem champion nem tabela de inferência: avisa e pula endpoint e perfil
+databricks bundle run features                 # features_cliente; depois, cada atualização da ABT a refaz
 databricks bundle run training                 # registra o champion e grava a baseline
 databricks bundle deploy                       # publica o endpoint (e a tabela de inferência)
 databricks bundle run batch_scoring
@@ -255,9 +259,14 @@ em todos os caminhos, sem depender do ciclo do time de dados.
 
 ### Roteiro
 
-1. **Features e treino** (job `credit_training`, disparado quando a ABT muda):
-   - `src/features/build_features.py`: a fotografia mais recente de cada cliente (`features_cliente`).
-   - `src/training/train_register.py`: contrato de entrada na ABT, nested runs, escolha pela log
+1. **Features e treino**:
+   - `src/features/build_features.py` (job `credit_features`, disparado quando a ABT muda): a
+     fotografia mais recente de cada cliente (`features_cliente`), o histórico que o serviço de
+     crédito junta à proposta.
+   - `src/training/train_register.py` (job `credit_training`, **sob demanda**): retreinar é uma
+     decisão, tomada a partir do monitoramento (drift, entrada fora do contrato) ou de uma mudança de
+     política ou de público, e não de cada atualização da ABT, que quase nunca traz contratos novos com
+     o alvo já observado. Contrato de entrada na ABT, nested runs, escolha pela log
      loss, validação por segmento, portão de AUC, **validação pré-deploy** do pacote, registro com
      **express deployment** e alias (`champion` na primeira versão, `challenger` nas seguintes).
 2. **Deploy** (`bundle deploy`, feito pelo CD): `resources/serving.py` lê o alias `champion` e
