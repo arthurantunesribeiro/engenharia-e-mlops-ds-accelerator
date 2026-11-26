@@ -1,0 +1,28 @@
+# Time de ML: publica o bundle ml/ quando o ml-ci passa num push na main.
+name: ml-cd
+
+on:
+  workflow_run:
+    workflows: [ml-ci]
+    types: [completed]
+    branches: [main]
+
+concurrency: ml-cd
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    environment: databricks   # em Settings › Environments dá para exigir aprovação antes do deploy
+    defaults: {run: {working-directory: ml}}
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: "${{ github.event.workflow_run.head_sha }}"}   # exatamente o commit testado
+      - uses: astral-sh/setup-uv@v6                 # o bundle constrói a wheel com uv build
+        with: {version: "0.13.6", python-version: "3.12", enable-cache: true, cache-dependency-glob: ml/uv.lock}
+      - uses: databricks/setup-cli@main
+      - run: uv sync --locked --only-group bundle --no-install-project   # ml/.venv, com o que o bundle importa
+      - run: databricks bundle deploy
