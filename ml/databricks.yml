@@ -1,0 +1,36 @@
+# Bundle do time de ML: consome as tabelas gold do time de dados e entrega o score.
+#   databricks bundle deploy      constrói a wheel do pacote credit_score e publica tudo
+bundle:
+  name: credit_ml
+  engine: direct
+
+include:
+  - resources/*.yml
+
+artifacts:
+  credit_score:                              # o pacote src/credit_score, como wheel
+    type: whl
+    path: .
+    build: uv build --wheel
+    dynamic_version: true                    # cada deploy publica uma wheel nova, sem mexer na versão
+
+variables:
+  job_environment:
+    description: Ambiente serverless das tarefas dos jobs, com o pacote e as versões fixas
+    type: complex
+    default:
+      environment_version: "4"
+      dependencies:
+        - ./dist/*.whl                       # o bundle troca pelo caminho absoluto da wheel no workspace
+        - mlflow==3.17.2
+        - databricks-sdk==0.155.0
+
+python:
+  venv_path: .venv                           # criado por uv sync
+  resources:
+    - "resources.serving:load_resources"             # endpoint com a versão do alias champion
+    - "resources.inference_profile:load_resources"   # data profiling da tabela de inferência
+
+targets:
+  dev:
+    default: true

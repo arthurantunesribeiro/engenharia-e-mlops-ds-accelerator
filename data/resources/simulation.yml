@@ -1,0 +1,8 @@
+# Só para a aula: em produção, os sistemas de origem entregam os arquivos na landing.
+resources:
+  jobs:
+    source_simulation:
+      name: credit_source_simulation
+      tasks:
+        - task_key: simulate_source_systems
+          notebook_task: {notebook_path: ../notebooks/simulate_source_systems.py}

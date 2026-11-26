@@ -1,0 +1,22 @@
+# Onde os dados moram, e o anomaly detection do Databricks sobre todas as tabelas do schema:
+# a gold está em dia (freshness) e completa (completeness)?
+resources:
+  schemas:
+    credit:
+      catalog_name: main
+      name: credit
+      comment: "Landing, bronze, silver e gold do crédito. Produto publicado: as tabelas gold_*"
+      lifecycle: {prevent_destroy: true}
+
+  volumes:
+    landing:
+      catalog_name: main
+      schema_name: ${resources.schemas.credit.name}
+      name: landing
+      volume_type: MANAGED
+
+  data_quality_monitors:
+    credit_anomaly_detection:
+      object_type: schema
+      object_id: ${resources.schemas.credit.schema_id}
+      anomaly_detection_config: {}
