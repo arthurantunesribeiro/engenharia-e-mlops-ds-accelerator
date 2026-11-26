@@ -30,6 +30,7 @@ python:
   venv_path: .venv                           # criado por uv sync
   resources:
     - "resources.serving:load_resources"             # endpoint com a versão do alias champion
+    - "resources.monitoring:load_resources"          # job de monitoramento, quando as tabelas do gatilho existem
     - "resources.inference_profile:load_resources"   # data profiling da tabela de inferência
 
 targets:

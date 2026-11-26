@@ -59,7 +59,7 @@ credit-score-mlops/
 │   │   ├── training.yml                #     job de treino, sob demanda
 │   │   ├── deployment.yml              #     deployment job: avaliação, aprovação na UI e deploy
 │   │   ├── scoring.yml                 #     job que dispara quando chegam propostas novas
-│   │   ├── monitoring.yml              #     job que dispara quando o modelo pontua (endpoint ou batch)
+│   │   ├── monitoring.py               #     job que dispara quando o modelo pontua (criado quando as tabelas existem)
 │   │   ├── serving.py                  #     endpoint credit-score com a versão do alias champion
 │   │   └── inference_profile.py        #     data profiling da tabela de inferência
 │   ├── src/                            #   scripts dos jobs (spark_python_task) e o pacote
