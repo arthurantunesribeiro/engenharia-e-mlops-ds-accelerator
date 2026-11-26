@@ -18,5 +18,5 @@ jobs:
       DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - uses: databricks/setup-cli@main
+      - uses: databricks/setup-cli@v1.24.0   # a mesma versão do bundle de ML
       - run: databricks bundle deploy

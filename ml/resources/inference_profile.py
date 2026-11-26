@@ -2,6 +2,7 @@
 from databricks.bundles.core import Bundle, Resources
 from databricks.bundles.data_quality_monitors import DataQualityMonitor
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.errors import NotFound
 
 INFERENCE_LOG = "main.credit_ml.credit_score_inference_log"
 
@@ -13,11 +14,16 @@ def load_resources(bundle: Bundle) -> Resources:
         bundle: Bundle em deploy (não usado).
 
     Returns:
-        Recursos com o monitor de data profiling.
+        Recursos com o monitor de data profiling, ou nenhum recurso se a tabela ainda não existir.
     """
-    table_id = WorkspaceClient().tables.get(INFERENCE_LOG).table_id
-
     resources = Resources()
+    try:
+        table_id = WorkspaceClient().tables.get(INFERENCE_LOG).table_id
+    except NotFound:   # a tabela nasce na primeira execução do job de monitoramento
+        resources.add_diagnostic_warning(
+            f"{INFERENCE_LOG} ainda não existe: o perfil de inferência fica para o deploy depois do monitoramento")
+        return resources
+
     resources.add_data_quality_monitor("credit_score_inference_profile", DataQualityMonitor.from_dict({
         "object_type": "table",
         "object_id": table_id,

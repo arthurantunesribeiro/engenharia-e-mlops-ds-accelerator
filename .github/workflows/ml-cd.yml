@@ -6,12 +6,15 @@ on:
     workflows: [ml-ci]
     types: [completed]
     branches: [main]
+  workflow_dispatch:   # redeploy manual da main, por exemplo nas etapas do primeiro deploy
 
 concurrency: ml-cd
 
 jobs:
   deploy:
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     environment: databricks   # em Settings › Environments dá para exigir aprovação antes do deploy
     defaults: {run: {working-directory: ml}}
@@ -20,9 +23,9 @@ jobs:
       DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-        with: {ref: "${{ github.event.workflow_run.head_sha }}"}   # exatamente o commit testado
+        with: {ref: "${{ github.event.workflow_run.head_sha || github.sha }}"}   # exatamente o commit testado
       - uses: astral-sh/setup-uv@v6                 # o bundle constrói a wheel com uv build
         with: {version: "0.13.6", python-version: "3.12", enable-cache: true, cache-dependency-glob: ml/uv.lock}
-      - uses: databricks/setup-cli@main
+      - uses: databricks/setup-cli@v1.24.0   # mínimo exigido pelo databricks-bundles==1.24.0
       - run: uv sync --locked --only-group bundle --no-install-project   # ml/.venv, com o que o bundle importa
       - run: databricks bundle deploy
