@@ -97,8 +97,7 @@ CREATE FLOW cdc_renda AS AUTO CDC INTO silver_renda
 FROM STREAM(bronze_renda)
 KEYS (cliente_id)
 SEQUENCE BY atualizado_em
-COLUMNS *
-STORED AS SCD TYPE 2;
+STORED AS SCD TYPE 2;   -- sem COLUMNS: todas as colunas (a cláusula só aceita lista ou * EXCEPT)
 
 
 -- =====================================================================================
