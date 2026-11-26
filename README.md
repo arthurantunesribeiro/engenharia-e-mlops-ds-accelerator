@@ -1,0 +1,357 @@
+# Credit Score · do arquivo bruto ao modelo servido e monitorado
+
+Projeto fim a fim de score de inadimplência no Databricks, usado em duas aulas.
+
+## Contexto
+
+Uma financeira concede crédito pessoal, cartão e consignado. Cada proposta passa por uma analista,
+que precisa decidir em segundos: aprovar, recusar ou mandar para análise manual. A pergunta por trás
+da decisão é sempre a mesma: **qual a chance de este cliente atrasar 90 dias ou mais?**
+
+Hoje essa resposta depende de dados espalhados por cinco sistemas que não conversam entre si:
+
+| Sistema | O que entrega | O problema |
+| --- | --- | --- |
+| Core bancário | parcelas pagas e em aberto | exporta valor como `R$ 1.290,00` ou `1290.00`, datas em dois formatos, linhas repetidas, CPF aberto |
+| Gestão de contratos | eventos de cada contrato (CDC) | eventos chegam fora de ordem; um atraso pode chegar meses depois de uma renegociação |
+| Cadastro | dados do cliente | segmento e canal |
+| Renda | renda declarada | muda com o tempo; o modelo precisa da renda **da época** de cada contrato |
+| Originação | o que se sabia no pedido | uso do limite, consultas ao bureau, pedidos recentes; e as propostas novas, ainda sem contrato |
+
+O projeto resolve isso em duas etapas, uma por aula:
+
+- **Aula 1 · Engenharia de dados — "dá para confiar no dado?"** Os arquivos desses sistemas viram,
+  no lakehouse, uma base confiável: limpa, tipada, sem duplicadas, com o histórico certo e uma linha
+  por contrato com o que se sabia na concessão e o que aconteceu depois (a ABT). O fio condutor é
+  acompanhar **um contrato** da landing até a gold.
+- **Aula 2 · MLOps — "dá para confiar no modelo, hoje e amanhã?"** A ABT treina um score que devolve
+  probabilidade, faixa de risco (A a E) e motivos. Ele é validado antes de ir ao ar, servido para a
+  tela da analista (endpoint) e para a cobrança (batch), recusa dado fora do contrato e é monitorado,
+  porque em crédito o rótulo só chega meses depois e o primeiro sinal de problema é o drift.
+
+Como numa empresa de verdade, são **dois times com dois projetos independentes**: o time de dados
+(`data/`) é dono da landing até a gold e publica as tabelas gold como produto; o time de ML (`ml/`)
+consome essas tabelas pelo Unity Catalog, sem saber como foram construídas. Cada projeto tem seu
+bundle, seu CI/CD e seu ritmo de deploy, e um não chama o outro: o elo são os dados. Tudo roda no
+Databricks Free Edition, com dados sintéticos gerados para ter os problemas acima de propósito.
+
+## Estrutura
+
+```
+credit-score-mlops/
+├── README.md                           # este guia
+├── data/                               # TIME DE DADOS · aula 1
+│   ├── databricks.yml                  #   bundle credit_data
+│   ├── resources/
+│   │   ├── foundation.yml              #     schema main.credit, volume landing, anomaly detection
+│   │   ├── ingestion.yml               #     pipeline Lakeflow + job que dispara com a chegada de arquivos
+│   │   └── simulation.yml              #     job que simula os sistemas de origem (só para a aula)
+│   ├── src/ingestion/credit_pipeline.sql   # landing → bronze → silver → gold
+│   └── notebooks/
+│       ├── simulate_source_systems.py  #     arquivos dos sistemas de origem na landing
+│       └── follow_a_contract.py        #     um contrato da landing até a gold
+├── ml/                                 # TIME DE ML · aula 2
+│   ├── databricks.yml                  #   bundle credit_ml: wheel do pacote, ambiente dos jobs
+│   ├── pyproject.toml                  #   o pacote credit_score
+│   ├── resources/
+│   │   ├── foundation.yml              #     schema main.credit_ml, experimento, modelo, anomaly detection
+│   │   ├── training.yml                #     job que dispara quando a ABT muda
+│   │   ├── scoring.yml                 #     job que dispara quando chegam propostas novas
+│   │   ├── monitoring.yml              #     job que dispara quando o modelo pontua (endpoint ou batch)
+│   │   ├── serving.py                  #     endpoint credit-score com a versão do alias champion
+│   │   └── inference_profile.py        #     data profiling da tabela de inferência
+│   ├── src/                            #   scripts dos jobs (spark_python_task) e o pacote
+│   │   ├── credit_score/               #     pacote de produção (wheel nos jobs; dentro do modelo registrado)
+│   │   ├── features/build_features.py  #     gold → features_cliente
+│   │   ├── training/train_register.py
+│   │   ├── scoring/batch_scoring.py
+│   │   └── monitoring/                 #     build_inference_log.py, monitor_model.py
+│   ├── notebooks/                      #   query_endpoint, explore_scores, promote_model
+│   └── tests/
+└── .github/workflows/                  # data-cd.yml · ml-ci.yml · ml-cd.yml
+```
+
+## Como os dois times se conectam
+
+Nenhum job chama outro. Cada etapa dispara quando o dado de que ela depende muda:
+
+```mermaid
+flowchart LR
+    subgraph DATA["Time de dados · data/ · aula 1"]
+        landing[("landing<br/>/Volumes/main/credit/landing")]
+        ingestion["credit_ingestion<br/>bronze → silver → gold"]
+        abt[("gold_abt_credito")]
+        pending[("gold_propostas_pendentes")]
+        landing -- "chegada de arquivo" --> ingestion
+        ingestion --> abt
+        ingestion --> pending
+    end
+
+    subgraph ML["Time de ML · ml/ · aula 2"]
+        training["credit_training"]
+        champion{{"alias champion"}}
+        endpoint["endpoint credit-score"]
+        scoring["credit_batch_scoring"]
+        payload[("credit_score_payload<br/>tabela de inferência")]
+        scores[("scores_credito")]
+        monitoring["credit_monitoring"]
+        profiling["data profiling<br/>drift e painel"]
+        training --> champion
+        champion -- "bundle deploy" --> endpoint
+        champion -. "usado por" .-> scoring
+        endpoint --> payload
+        scoring --> scores
+        payload -- "atualização" --> monitoring
+        scores -- "atualização" --> monitoring
+        monitoring --> profiling
+    end
+
+    abt -- "atualização da tabela" --> training
+    pending -- "atualização da tabela" --> scoring
+```
+
+A interface entre os times são as tabelas `main.credit.gold_abt_credito` e
+`main.credit.gold_propostas_pendentes`. O monitoramento usa o Data Quality Monitoring do Databricks em
+dois níveis:
+
+| Recurso | Onde | Pergunta | Time |
+| --- | --- | --- | --- |
+| Anomaly detection | schemas `main.credit` e `main.credit_ml` | cada tabela está em dia (freshness) e completa (completeness)? | os dois |
+| Data profiling (perfil de inferência) | `main.credit_ml.credit_score_inference_log` | as entradas e o score mudaram em relação à validação do treino? | ML |
+
+## Preparação (antes das duas aulas)
+
+Com o repositório num Git folder do Databricks e o Databricks CLI autenticado, uma vez:
+
+```bash
+cd data && databricks bundle deploy && databricks bundle run source_simulation && cd ..
+#   a chegada dos arquivos dispara a ingestão: espere o pipeline terminar
+
+cd ml && uv sync                              # cria ml/.venv com o pacote, os testes e o que o bundle importa
+databricks bundle deploy                       # sem champion nem tabela de inferência: avisa e pula endpoint e perfil
+databricks bundle run training                 # registra o champion e grava a baseline
+databricks bundle deploy                       # publica o endpoint (e a tabela de inferência)
+databricks bundle run batch_scoring
+databricks bundle run monitoring --only build_inference_log
+databricks bundle deploy                       # cria o perfil de inferência
+#   pelo GitHub, os deploys são o ml-cd: rode-o manualmente (Actions › ml-cd › Run workflow) entre as etapas
+```
+
+Daqui em diante, tudo dispara sozinho: arquivos novos na landing → ingestão → treino e scoring →
+monitoramento.
+
+---
+
+## Aula 1 · Engenharia de dados: do arquivo bruto à ABT (`data/`)
+
+**Objetivo**: acompanhar um dado da landing até a gold e entender o que cada camada faz com ele.
+
+### Roteiro
+
+1. **Os dados que chegam** (`notebooks/simulate_source_systems.py`): cinco sistemas deixam arquivos
+   na landing (`/Volumes/main/credit/landing`), com problemas de propósito.
+2. **O pipeline** (`src/ingestion/credit_pipeline.sql`): lido de cima para baixo, bronze → silver →
+   gold. A chegada dos arquivos dispara o job `credit_ingestion`; acompanhe o grafo na UI do pipeline.
+3. **Um contrato, camada por camada** (`notebooks/follow_a_contract.py`): o notebook escolhe o contrato
+   que mais mostra (ou o que você digitar no widget) e o acompanha da landing à ABT.
+4. **Linhagem**: **Catalog** › `main.credit.gold_abt_credito` › **Lineage**.
+5. **A gold como produto**: **Catalog** › schema `main.credit` › aba **Quality**: o anomaly detection
+   acompanha se cada tabela está em dia e completa.
+
+### O caminho das tabelas
+
+O grafo que o pipeline desenha na UI, e que o notebook percorre com um contrato:
+
+```mermaid
+flowchart LR
+    subgraph LANDING["Landing · arquivos"]
+        f_parc["parcelas · CSV"]
+        f_cdc["contratos_cdc · JSON"]
+        f_cli["clientes · JSON"]
+        f_renda["renda · JSON"]
+        f_prop["propostas · JSON"]
+    end
+
+    subgraph BRONZE["Bronze · como chegou"]
+        b_parc[bronze_parcelas]
+        b_cdc[bronze_contratos_cdc]
+        b_cli[bronze_clientes]
+        b_renda[bronze_renda]
+        b_prop[bronze_propostas]
+    end
+
+    subgraph SILVER["Silver · limpo e confiável"]
+        s_parc["silver_parcelas<br/>tipada, sem duplicadas"]
+        quar["quarentena_parcelas<br/>o que as regras barraram"]
+        s_contr["silver_contratos<br/>AUTO CDC · SCD 1"]
+        s_renda["silver_renda<br/>AUTO CDC · SCD 2"]
+    end
+
+    subgraph GOLD["Gold · pronto para o negócio"]
+        dim[dim_cliente]
+        fato[fato_parcelas]
+        safra[gold_inadimplencia_safra]
+        abt["gold_abt_credito<br/>treino do modelo"]
+        pend["gold_propostas_pendentes<br/>entrada do scoring"]
+    end
+
+    f_parc --> b_parc
+    f_cdc --> b_cdc
+    f_cli --> b_cli
+    f_renda --> b_renda
+    f_prop --> b_prop
+
+    b_parc --> s_parc
+    b_parc --> quar
+    b_cdc --> s_contr
+    b_renda --> s_renda
+
+    b_cli --> dim
+    s_renda --> dim
+    s_parc --> fato
+    s_contr --> fato
+    fato --> safra
+    s_contr --> safra
+    b_prop --> abt
+    dim --> abt
+    fato --> abt
+    s_contr --> abt
+    s_renda --> abt
+    b_prop --> pend
+    b_cdc --> pend
+    dim --> pend
+    fato --> pend
+```
+
+### O que o contrato mostra em cada camada
+
+| Camada | Tabela | Conceito |
+| --- | --- | --- |
+| Landing | `parcelas` (CSV), `contratos_cdc`, `clientes`, `renda`, `propostas` (JSON) | Dado sujo: `R$ 1.290,00` e `1290.00`, datas em dois formatos, parcela repetida, CPF aberto, eventos fora de ordem |
+| Bronze | `bronze_*` | Guardar como chegou; Auto Loader lê cada arquivo uma vez; colunas de rastreio (`_arquivo`, `_carga_em`) |
+| Silver | `silver_parcelas` | Tipar, CPF vira hash (LGPD), tirar duplicadas; expectations com `DROP ROW` |
+| Silver | `quarentena_parcelas` | O que as regras barraram, com o motivo |
+| Silver | `silver_contratos` | `AUTO CDC` (SCD 1): estado atual pela ordem do fato, com delete |
+| Silver | `silver_renda` | `AUTO CDC` (SCD 2): a renda que valia em cada período |
+| Gold | `dim_cliente`, `fato_parcelas` | Esquema estrela: o fato só com chaves e medidas |
+| Gold | `gold_inadimplencia_safra` | Indicador de negócio por safra |
+| Gold | `gold_abt_credito` | A ABT point-in-time que treina o modelo, com `EXPECT ... FAIL UPDATE` |
+| Gold | `gold_propostas_pendentes` | Propostas novas, ainda sem contrato, com as mesmas features: a entrada do scoring |
+
+### Números de referência
+
+~54 mil parcelas na landing, 536 duplicadas e 20 sem contrato (que vão para a quarentena); ~3,7 mil
+contratos na ABT, com ~15% de inadimplência; 5 mil propostas pendentes. Com os dados simulados, o
+contrato escolhido é o 3532: evento de CDC fora de ordem, parcela duplicada, valor em formato
+brasileiro e renda revista depois da concessão.
+
+
+---
+
+## Aula 2 · MLOps: do modelo treinado ao modelo monitorado (`ml/`)
+
+**Objetivo**: levar a ABT a um score em produção, com o mesmo código e o mesmo contrato de entrada
+em todos os caminhos, sem depender do ciclo do time de dados.
+
+### Roteiro
+
+1. **Features e treino** (job `credit_training`, disparado quando a ABT muda):
+   - `src/features/build_features.py`: a fotografia mais recente de cada cliente (`features_cliente`).
+   - `src/training/train_register.py`: contrato de entrada na ABT, nested runs, escolha pela log
+     loss, validação por segmento, portão de AUC, **validação pré-deploy** do pacote, registro com
+     **express deployment** e alias (`champion` na primeira versão, `challenger` nas seguintes).
+2. **Deploy** (`bundle deploy`, feito pelo CD): `resources/serving.py` lê o alias `champion` e
+   publica o endpoint `credit-score`, com tabela de inferência.
+3. **Scoring batch** (job `credit_batch_scoring`, disparado quando chegam propostas novas): as
+   propostas passam pelo contrato em SQL; as que falham vão para a quarentena com o motivo, e o resto
+   é pontuado pelo `champion`.
+4. **Consumir o modelo** (`notebooks/query_endpoint.py`): o serviço de crédito monta a requisição
+   (histórico + proposta + eventos recentes), o endpoint responde score, faixa e motivos e recusa o
+   que está fora do contrato (HTTP 400); latência p50/p95.
+5. **Monitoramento** (job `credit_monitoring`, disparado quando o modelo pontua):
+   - `src/monitoring/build_inference_log.py`: junta as chamadas ao endpoint (a tabela de inferência
+     do AI Gateway, de JSON para uma linha por proposta, com a versão do modelo) e o scoring batch
+     em `credit_score_inference_log`.
+   - **Data profiling** (`resources/inference_profile.py`): perfil de inferência sobre essa tabela,
+     com a baseline gravada pelo treino; calcula PSI, KS e qui-quadrado por coluna, por dia, versão
+     do modelo e segmento, e gera um painel.
+   - `src/monitoring/monitor_model.py`: pede o refresh do perfil, mede a taxa fora do contrato e
+     transforma o drift em alertas.
+   - `notebooks/explore_scores.py`: scores, quarentena, chamadas e drift.
+6. **Promoção** (`notebooks/promote_model.py`): compara `champion` e `challenger`, move o alias e
+   atualiza a versão servida no endpoint; o scoring batch usa a nova versão na próxima execução. O
+   próximo `bundle deploy` lê o mesmo `champion`, então não desfaz a troca.
+
+### Como o código chega aos jobs
+
+Nenhum script manipula `sys.path` nem instala pacote. O `credit_score` é um pacote de verdade
+(`pyproject.toml`), e o bundle cuida do resto:
+
+1. `artifacts` constrói a wheel no `bundle deploy` (`uv build --wheel`, com versão dinâmica a cada deploy).
+2. A variável `job_environment` (em `databricks.yml`) define o ambiente serverless dos jobs: a wheel e as
+   versões fixas do `mlflow` e do SDK. Cada job a referencia com `${var.job_environment}`.
+3. O bundle troca `./dist/*.whl` pelo caminho absoluto da wheel no workspace, e os caminhos dos scripts
+   pelo caminho absoluto dos arquivos publicados.
+
+As etapas de `src/` são scripts (`spark_python_task`) porque, no serverless, só tarefas de script aceitam
+um ambiente declarado no job; tarefas de notebook exigiriam `%pip` dentro do código. No treino, o pacote
+vai para dentro do modelo registrado a partir de onde ele está instalado (`credit_score.__file__`).
+
+### O contrato de entrada em todos os caminhos
+
+As regras de domínio ficam num lugar só, `src/credit_score/contract.py`:
+
+| Onde | Como | Fora do contrato |
+| --- | --- | --- |
+| Treino | `validate_inputs` | a linha sai; acima de 1%, o treino para |
+| Antes do registro | `validate_serving_input` com um caso válido e um fora | a versão não é registrada |
+| Scoring batch | `contract_sql_rules()` | a linha vai para `propostas_quarentena`; acima de 5%, o job para |
+| Endpoint | assinatura MLflow (colunas e tipos) + contrato no `predict` | HTTP 400 com a regra quebrada |
+| Monitoramento | tabela de inferência (`status_code`) e quarentena | alerta acima de 2% |
+
+
+### Números de referência
+
+AUC ~0,78 na ABT; 1,5% das propostas pendentes em quarentena (75 de 5 mil); drift esperado nas
+propostas pendentes (uso médio do limite de ~0,48 para ~0,72), que o PSI do data profiling deve acusar.
+
+---
+
+## CI/CD, um por time
+
+```mermaid
+flowchart LR
+    pr(["pull request<br/>muda ml/"]) --> ci_pr["ml-ci<br/>testes + ambiente do modelo<br/>só verifica, não publica"]
+
+    push_ml(["push na main<br/>muda ml/"]) --> ci["ml-ci<br/>testes + ambiente do modelo"]
+    ci -- "passou" --> cd["ml-cd<br/>bundle deploy do commit testado"]
+    cd --> ws_ml[("Databricks<br/>bundle credit_ml")]
+
+    push_data(["push na main<br/>muda data/"]) --> dcd["data-cd<br/>bundle deploy"]
+    dcd --> ws_data[("Databricks<br/>bundle credit_data")]
+```
+
+| Workflow | Quando | O que faz |
+| --- | --- | --- |
+| `data-cd.yml` | push na `main` que muda `data/` | `bundle deploy` do projeto de dados |
+| `ml-ci.yml` | pull request ou push na `main` que muda `ml/` | testes do pacote e o pacote do modelo num ambiente recriado do zero; não publica nada |
+| `ml-cd.yml` | quando o `ml-ci` passa num push na `main` | `bundle deploy` do projeto de ML, do mesmo commit que foi testado |
+
+Uma mudança no pipeline não reimplanta o modelo, e vice-versa. Os deploys usam os secrets
+`DATABRICKS_HOST` e `DATABRICKS_TOKEN` e o environment `databricks` do GitHub, onde dá para exigir
+aprovação antes do deploy.
+
+As dependências do `ml/` ficam no `pyproject.toml` e no `uv.lock`, em dependency groups: `dev` (testes, nas versões
+do ambiente de treino e do endpoint) e `bundle` (o que o código Python do bundle importa). Localmente, em `ml/`:
+`uv sync && uv run pytest -q`. O teste do ambiente isolado roda à parte: `uv run pytest -m environment -o addopts=""`.
+O ambiente do modelo registrado não usa o `uv.lock`: vem só do `pip_requirements` (`MLFLOW_UV_AUTO_DETECT=false`
+no treino), com as versões exatas e o `mlflow` completo que o endpoint precisa.
+
+---
+
+## Convenções
+
+Código (pastas, scripts, funções, variáveis) em inglês; docstrings no padrão Google, em português.
+Dados (tabelas e colunas) em português, como chegam dos sistemas de origem. Catálogo `main`: schema
+`credit` do time de dados e `credit_ml` do time de ML. Os dois bundles usam o motor de deploy `direct`,
+tudo serverless, nomes fixos e um alvo `dev`.
