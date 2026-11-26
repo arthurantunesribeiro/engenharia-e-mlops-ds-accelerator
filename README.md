@@ -66,11 +66,11 @@ credit-score-mlops/
 │   │   ├── credit_score/               #     pacote de produção (wheel nos jobs; dentro do modelo registrado)
 │   │   ├── features/build_features.py  #     gold → features_cliente
 │   │   ├── training/train_register.py
-│   │   ├── deployment/                 #     evaluation.py, approval.py, deploy.py (tarefas do deployment job)
 │   │   ├── scoring/batch_scoring.py
 │   │   └── monitoring/                 #     build_inference_log.py, monitor_model.py
 │   ├── scripts/connect_deployment_job.py #   liga o deployment job ao modelo (roda no ml-cd)
 │   ├── notebooks/                      #   query_endpoint, explore_scores
+│   │   └── deployment/                 #     evaluation, approval, deploy (tarefas do deployment job)
 │   └── tests/
 └── .github/workflows/                  # data-cd.yml · ml-ci.yml · ml-cd.yml
 ```
