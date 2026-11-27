@@ -39,6 +39,7 @@ def load_resources(bundle: Bundle) -> Resources:
             },
             "baseline_table_name": "main.credit_ml.credit_score_baseline",
             "slicing_exprs": ["segmento"],
+            "notification_settings": {"on_failure": {"email_addresses": ["${var.alert_email}"]}},   # refresh falhou
         },
     }))
     return resources

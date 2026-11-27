@@ -61,7 +61,9 @@ credit-score-mlops/
 │   │   ├── scoring.yml                 #     job que dispara quando chegam propostas novas
 │   │   ├── monitoring.py               #     job que dispara quando o modelo pontua (criado quando as tabelas existem)
 │   │   ├── serving.py                  #     endpoint credit-score com a versão do alias champion
-│   │   └── inference_profile.py        #     data profiling da tabela de inferência
+│   │   ├── inference_profile.py        #     data profiling da tabela de inferência
+│   │   ├── model_alerts.py             #     SQL alerts de drift e de entrada fora do contrato
+│   │   └── alerts/                     #     as consultas dos alertas (.sql)
 │   ├── src/                            #   scripts dos jobs (spark_python_task) e o pacote
 │   │   ├── credit_score/               #     pacote de produção (wheel nos jobs; dentro do modelo registrado)
 │   │   ├── features/build_features.py  #     gold → features_cliente
@@ -136,6 +138,8 @@ cd data && databricks bundle deploy && databricks bundle run source_simulation &
 #   a chegada dos arquivos dispara a ingestão: espere o pipeline terminar
 
 cd ml && uv sync                              # cria ml/.venv com o pacote, os testes e o que o bundle importa
+export BUNDLE_VAR_alert_email=voce@empresa.com   # quem recebe os avisos (ver "Alertas")
+export BUNDLE_VAR_alert_destination_id=<id>      # notification destination de e-mail (ver "Alertas")
 databricks bundle deploy                       # sem champion: avisa e pula endpoint, monitoramento e perfil
 databricks bundle run features                 # features_cliente; depois, cada atualização da ABT a refaz
 uv run python scripts/connect_deployment_job.py   # liga o deployment job ao modelo (o ml-cd também faz)
@@ -303,8 +307,10 @@ em todos os caminhos, sem depender do ciclo do time de dados.
    - **Data profiling** (`resources/inference_profile.py`): perfil de inferência sobre essa tabela,
      com a baseline gravada pelo treino; calcula PSI, KS e qui-quadrado por coluna, por dia, versão
      do modelo e segmento, e gera um painel.
-   - `src/monitoring/monitor_model.py`: pede o refresh do perfil, mede a taxa fora do contrato e
-     transforma o drift em alertas.
+   - `src/monitoring/monitor_model.py`: pede o refresh do perfil e espera terminar.
+   - **SQL alerts** (`resources/model_alerts.py`), como a documentação do data profiling recomenda:
+     consultas sobre as tabelas de métricas, avaliadas todo dia às 8h, que avisam por e-mail. Ver
+     [Alertas](#alertas).
    - `notebooks/explore_scores.py`: scores, quarentena, chamadas e drift.
 6. **Promoção** (deployment job `credit_deployment`, disparado por cada versão nova): avalia a versão
    nova e o champion na mesma janela, para na aprovação até alguém aprovar na UI e então move o
@@ -441,7 +447,36 @@ flowchart LR
 
 Uma mudança no pipeline não reimplanta o modelo, e vice-versa. Os deploys usam os secrets
 `DATABRICKS_HOST` e `DATABRICKS_TOKEN` e o environment `databricks` do GitHub, onde dá para exigir
-aprovação antes do deploy.
+aprovação antes do deploy. O `ml-cd` também lê as variáveis `ALERT_EMAIL` e `ALERT_DESTINATION_ID` desse
+environment (ver [Alertas](#alertas)).
+
+### Alertas
+
+Quem recebe fica fora do código (o repositório é público): duas variáveis do bundle, preenchidas no CI
+pelas variáveis do environment `databricks` do GitHub e, localmente, por `BUNDLE_VAR_<nome>`.
+
+| Variável do bundle | No GitHub | Para quê |
+| --- | --- | --- |
+| `alert_email` | `ALERT_EMAIL` | falha dos jobs de ML e falha do refresh do perfil de inferência |
+| `alert_destination_id` | `ALERT_DESTINATION_ID` | SQL alerts e anomaly detection do schema `credit_ml` |
+
+Os SQL alerts e o anomaly detection só avisam e-mails por um *notification destination*, criado uma vez
+(precisa de admin do workspace) e informado pelo id:
+
+```bash
+databricks notification-destinations create --json \
+  '{"display_name": "credit_ml · alertas do modelo", "config": {"email": {"addresses": ["voce@empresa.com"]}}}'
+```
+
+| Alerta | Fonte | Avisa quando |
+| --- | --- | --- |
+| `credit_score · drift acima de 0,2 (PSI)` | `credit_score_inference_log_drift_metrics`, janela mais recente, contra a baseline | o maior PSI (qualquer coluna ou segmento) passa de 0,2 |
+| `credit_score · entrada fora do contrato acima de 2%` | `chamadas_endpoint` (7 dias) e o último lote da `propostas_quarentena` | a maior das duas taxas passa de 2% |
+| falha de job | `credit_training`, `credit_features`, `credit_batch_scoring`, `credit_monitoring` | o job falha |
+| falha do perfil | perfil de inferência | o refresh falha |
+| tabela desatualizada ou incompleta | anomaly detection do schema `credit_ml` | o Databricks marca uma tabela como não saudável |
+
+O `credit_deployment` fica sem aviso de falha: a tarefa de aprovação falha de propósito até a aprovação.
 
 As dependências do `ml/` ficam no `pyproject.toml` e no `uv.lock`, em dependency groups: `dev` (testes, nas versões
 do ambiente de treino e do endpoint) e `bundle` (o que o código Python do bundle importa). Localmente, em `ml/`:

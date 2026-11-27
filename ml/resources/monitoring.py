@@ -40,6 +40,7 @@ def load_resources(bundle: Bundle) -> Resources:
         "spark_python_task": {"python_file": f"${{workspace.file_path}}/src/monitoring/{script}"}, **kw}
     resources.add_resource("monitoring", Job.from_dict({
         "name": "credit_monitoring",
+        "email_notifications": {"on_failure": ["${var.alert_email}"]},
         "trigger": {"table_update": {"table_names": TRIGGER_TABLES, "condition": "ANY_UPDATED",
                                      "min_time_between_triggers_seconds": 3600}},
         "environments": [{"environment_key": "default", "spec": "${var.job_environment}"}],

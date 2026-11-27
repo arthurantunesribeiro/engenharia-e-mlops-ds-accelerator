@@ -2,6 +2,7 @@ resources:
   jobs:
     features:
       name: credit_features
+      email_notifications: {on_failure: ["${var.alert_email}"]}
       trigger:
         table_update:
           table_names: [main.credit.gold_abt_credito]

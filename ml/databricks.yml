@@ -15,6 +15,13 @@ artifacts:
     dynamic_version: true                    # cada deploy publica uma wheel nova, sem mexer na versão
 
 variables:
+  alert_email:
+    description: E-mail que recebe falhas dos jobs e do perfil de inferência (no CI, vars.ALERT_EMAIL; local, BUNDLE_VAR_alert_email)
+  alert_destination_id:
+    description: Notification destination (e-mail) dos SQL alerts e do anomaly detection (vars.ALERT_DESTINATION_ID)
+  warehouse_id:
+    description: SQL warehouse que roda os SQL alerts
+    lookup: {warehouse: Serverless Starter Warehouse}
   job_environment:
     description: Ambiente serverless das tarefas dos jobs, com o pacote e as versões fixas
     type: complex
@@ -32,6 +39,7 @@ python:
     - "resources.serving:load_resources"             # endpoint com a versão do alias champion
     - "resources.monitoring:load_resources"          # job de monitoramento, quando as tabelas do gatilho existem
     - "resources.inference_profile:load_resources"   # data profiling da tabela de inferência
+    - "resources.model_alerts:load_resources"        # SQL alerts de drift e de entrada fora do contrato
 
 targets:
   dev:
