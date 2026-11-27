@@ -35,11 +35,16 @@ consome essas tabelas pelo Unity Catalog, sem saber como foram construídas. Cad
 bundle, seu CI/CD e seu ritmo de deploy, e um não chama o outro: o elo são os dados. Tudo roda no
 Databricks Free Edition, com dados sintéticos gerados para ter os problemas acima de propósito.
 
+O contexto de negócio completo (o ciclo do crédito, cada fonte de origem, a definição do alvo e das
+variáveis, como ler score, faixas e motivos, e o que o monitoramento deve mostrar) está em
+[docs/contexto-de-negocio.md](docs/contexto-de-negocio.md).
+
 ## Estrutura
 
 ```
 credit-score-mlops/
 ├── README.md                           # este guia
+├── docs/contexto-de-negocio.md         # o problema de crédito, as fontes, o alvo e as variáveis
 ├── data/                               # TIME DE DADOS · aula 1
 │   ├── databricks.yml                  #   bundle credit_data
 │   ├── resources/
@@ -315,8 +320,7 @@ em todos os caminhos, sem depender do ciclo do time de dados.
      modelo`), em português: versão em produção, maior PSI e quantas colunas passaram de 0,2, a tabela
      de PSI por coluna e segmento, o PSI ao longo do tempo, as faixas A–E no treino e em produção, as
      chamadas, a latência e a quarentena por regra. Usa a janela mais recente, mesmo aberta.
-   - `src/monitoring/monitor_model.py`: pede o refresh do perfil, roda as consultas dos alertas e, se
-     algum limite foi ultrapassado, posta no Google Chat.
+   - `src/monitoring/monitor_model.py`: pede o refresh do perfil e espera terminar.
    - **SQL alerts** (`resources/model_alerts.py`), como a documentação do data profiling recomenda:
      consultas sobre as tabelas de métricas, avaliadas todo dia às 8h, que avisam por e-mail. Ver
      [Alertas](#alertas).
@@ -462,14 +466,13 @@ aprovação antes do deploy. Quem recebe os avisos não passa pelo GitHub: fica 
 ### Alertas
 
 Quem recebe fica fora do repositório (que é público), no secret scope `credit_ml` do Databricks. O deploy
-lê os secrets pelos resources em Python (`resources/notifications.py`), e o job de monitoramento lê o
-webhook em tempo de execução. Quem faz o deploy precisa de READ no scope.
+lê os secrets pelos resources em Python (`resources/notifications.py`). Quem faz o deploy precisa de READ
+no scope.
 
 | Secret (`credit_ml/…`) | Para quê |
 | --- | --- |
 | `alert_email` | falha dos jobs de ML e falha do refresh do perfil de inferência |
 | `alert_destination_id` | notification destination (e-mail) dos SQL alerts |
-| `google_chat_webhook` | URL do webhook do espaço do Google Chat (é uma credencial: `key` e `token`) |
 
 Para configurar (uma vez; o notification destination precisa de admin do workspace):
 
@@ -479,12 +482,11 @@ databricks secrets put-secret credit_ml alert_email --string-value voce@empresa.
 databricks notification-destinations create --json \
   '{"display_name": "credit_ml · alertas do modelo", "config": {"email": {"addresses": ["voce@empresa.com"]}}}'
 databricks secrets put-secret credit_ml alert_destination_id --string-value <id devolvido acima>
-databricks secrets put-secret credit_ml google_chat_webhook --string-value '<url do webhook>'
 ```
 
 | Aviso | Fonte | Por onde | Quando |
 | --- | --- | --- | --- |
-| `credit_score · drift acima de 0,2 (PSI)` | `credit_score_inference_log_drift_metrics`, janela mais recente, contra a baseline | SQL alert (e-mail), todo dia às 8h, e Google Chat depois de cada monitoramento | o maior PSI (qualquer coluna ou segmento) passa de 0,2 |
+| `credit_score · drift acima de 0,2 (PSI)` | `credit_score_inference_log_drift_metrics`, janela mais recente, contra a baseline | SQL alert (e-mail), todo dia às 8h | o maior PSI (qualquer coluna ou segmento) passa de 0,2 |
 | `credit_score · entrada fora do contrato acima de 2%` | `chamadas_endpoint` (7 dias) e o último lote da `propostas_quarentena` | idem | a maior das duas taxas passa de 2% |
 | falha de job | `credit_training`, `credit_features`, `credit_batch_scoring`, `credit_monitoring` | e-mail | o job falha |
 | falha do perfil | perfil de inferência | e-mail | o refresh falha |
@@ -492,16 +494,7 @@ databricks secrets put-secret credit_ml google_chat_webhook --string-value '<url
 O e-mail dos SQL alerts usa um template próprio (`custom_summary` e `custom_description` em
 `resources/model_alerts.py`): assunto `[credit_score] <alerta>: <estado>`, o valor contra o limite e a
 tabela do resultado da consulta (no drift, onde está o maior PSI e quantas colunas passaram do limite).
-O template não serve para o Google Chat: num webhook, o Databricks manda o próprio JSON, com o corpo
-personalizado dentro dele (`alert.description`).
-
-As consultas ficam em `resources/alerts/` e servem aos dois caminhos; os limites estão em
-`resources/model_alerts.py` e em `credit_score.monitoring` (`DRIFT_LIMIT`, `OUT_OF_CONTRACT_LIMIT`).
-
-> **Por que o Chat não é um notification destination.** O Google Chat só aceita mensagens com o campo
-> `text` (ou `cardsV2`) e recusa qualquer outro campo; o webhook genérico do Databricks manda um JSON
-> próprio. Por isso o job de monitoramento monta o `text` e posta direto. Slack e Microsoft Teams são
-> destinos nativos e não precisariam disso.
+As consultas ficam em `resources/alerts/` e os limites em `resources/model_alerts.py`.
 
 Ficam sem aviso por e-mail:
 

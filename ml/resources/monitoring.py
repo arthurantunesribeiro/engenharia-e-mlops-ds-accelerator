@@ -46,7 +46,6 @@ def load_resources(bundle: Bundle) -> Resources:
                                      "min_time_between_triggers_seconds": 3600}},
         "environments": [{"environment_key": "default", "spec": "${var.job_environment}"}],
         "tasks": [task("build_inference_log", "build_inference_log.py"),
-                  task("monitor_model", "monitor_model.py", ("--queries", "${workspace.file_path}/resources/alerts"),
-                       depends_on=[{"task_key": "build_inference_log"}])],
+                  task("monitor_model", "monitor_model.py", depends_on=[{"task_key": "build_inference_log"}])],
     }))
     return resources

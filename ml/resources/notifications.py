@@ -4,7 +4,6 @@
 | ------------------------ | ----------------------------------------------------------------- |
 | `alert_email`            | falha dos jobs de ML e falha do refresh do perfil de inferência   |
 | `alert_destination_id`   | notification destination (e-mail) dos SQL alerts                  |
-| `google_chat_webhook`    | lido pelo job de monitoramento, que posta os alertas no Google Chat |
 
 Quem faz o deploy precisa de READ no scope.
 """

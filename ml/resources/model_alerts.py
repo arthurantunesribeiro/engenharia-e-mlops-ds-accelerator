@@ -1,8 +1,7 @@
 """SQL alerts do monitoramento, como a documentação do data profiling recomenda.
 
 Cada alerta roda uma consulta de `resources/alerts/` no SQL warehouse e avisa o destino de notificação
-(secret `credit_ml/alert_destination_id`, um e-mail) quando o valor passa do limite. As mesmas consultas
-e limites vão para o Google Chat pelo job de monitoramento (`src/monitoring/monitor_model.py`):
+(secret `credit_ml/alert_destination_id`, um e-mail) quando o valor passa do limite:
 
 - drift: maior PSI contra a baseline do treino, na janela mais recente do perfil de inferência;
 - entrada fora do contrato: chamadas recusadas pelo endpoint ou propostas em quarentena no último lote.
@@ -20,7 +19,7 @@ from resources.notifications import secret
 
 QUERIES = Path(__file__).parent / "alerts"
 SCHEDULE = {"quartz_cron_schedule": "0 0 8 * * ?", "timezone_id": "America/Sao_Paulo"}   # todo dia, 8h
-ALERTS = {   # limites iguais aos de credit_score.monitoring (DRIFT_LIMIT, OUT_OF_CONTRACT_LIMIT)
+ALERTS = {
     # chave: (arquivo, coluna avaliada, limite, nome)
     "credit_score_drift": ("drift.sql", "maior_psi", 0.2, "credit_score · drift acima de 0,2 (PSI)"),
     "credit_score_fora_do_contrato": ("fora_do_contrato.sql", "maior_taxa_fora_do_contrato", 0.02,
