@@ -49,8 +49,7 @@ credit-score-mlops/
 │   ├── databricks.yml                  #   bundle credit_data
 │   ├── resources/
 │   │   ├── foundation.yml              #     schema main.credit, volume landing, anomaly detection
-│   │   ├── ingestion.yml               #     pipeline Lakeflow + job que dispara com a chegada de arquivos
-│   │   └── simulation.yml              #     job que simula os sistemas de origem (só para a aula)
+│   │   └── ingestion.yml               #     pipeline Lakeflow + job que dispara com a chegada de arquivos
 │   ├── src/ingestion/credit_pipeline.sql   # landing → bronze → silver → gold
 │   └── notebooks/
 │       ├── simulate_source_systems.py  #     arquivos dos sistemas de origem na landing
@@ -142,8 +141,9 @@ dois níveis:
 Com o repositório num Git folder do Databricks e o Databricks CLI autenticado, uma vez:
 
 ```bash
-cd data && databricks bundle deploy && databricks bundle run source_simulation && cd ..
-#   a chegada dos arquivos dispara a ingestão: espere o pipeline terminar
+cd data && databricks bundle deploy && cd ..
+#   rode o notebook data/notebooks/simulate_source_systems.py no workspace: ele grava os arquivos na
+#   landing, e a chegada deles dispara a ingestão; espere o pipeline terminar
 
 cd ml && uv sync                              # cria ml/.venv com o pacote, os testes e o que o bundle importa
 #   antes do primeiro deploy, crie o secret scope credit_ml com quem recebe os avisos (ver "Alertas")
