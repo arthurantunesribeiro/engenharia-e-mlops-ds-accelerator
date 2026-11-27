@@ -21,8 +21,6 @@ jobs:
     env:
       DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
       DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-      BUNDLE_VAR_alert_email: ${{ vars.ALERT_EMAIL }}                 # variáveis do environment Databricks
-      BUNDLE_VAR_alert_destination_id: ${{ vars.ALERT_DESTINATION_ID }}
     steps:
       - uses: actions/checkout@v4
         with: {ref: "${{ github.event.workflow_run.head_sha || github.sha }}"}   # exatamente o commit testado

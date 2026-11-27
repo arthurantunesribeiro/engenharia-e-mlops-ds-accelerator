@@ -2,7 +2,6 @@ resources:
   jobs:
     training:
       name: credit_training
-      email_notifications: {on_failure: ["${var.alert_email}"]}
       environments:
         - environment_key: default
           spec: ${var.job_environment}

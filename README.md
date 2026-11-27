@@ -63,6 +63,7 @@ credit-score-mlops/
 │   │   ├── serving.py                  #     endpoint credit-score com a versão do alias champion
 │   │   ├── inference_profile.py        #     data profiling da tabela de inferência
 │   │   ├── model_alerts.py             #     SQL alerts de drift e de entrada fora do contrato
+│   │   ├── notifications.py            #     lê os destinatários do secret scope; e-mail de falha nos jobs
 │   │   └── alerts/                     #     as consultas dos alertas (.sql)
 │   ├── src/                            #   scripts dos jobs (spark_python_task) e o pacote
 │   │   ├── credit_score/               #     pacote de produção (wheel nos jobs; dentro do modelo registrado)
@@ -138,8 +139,7 @@ cd data && databricks bundle deploy && databricks bundle run source_simulation &
 #   a chegada dos arquivos dispara a ingestão: espere o pipeline terminar
 
 cd ml && uv sync                              # cria ml/.venv com o pacote, os testes e o que o bundle importa
-export BUNDLE_VAR_alert_email=voce@empresa.com   # quem recebe os avisos (ver "Alertas")
-export BUNDLE_VAR_alert_destination_id=<id>      # notification destination de e-mail (ver "Alertas")
+#   antes do primeiro deploy, crie o secret scope credit_ml com quem recebe os avisos (ver "Alertas")
 databricks bundle deploy                       # sem champion: avisa e pula endpoint, monitoramento e perfil
 databricks bundle run features                 # features_cliente; depois, cada atualização da ABT a refaz
 uv run python scripts/connect_deployment_job.py   # liga o deployment job ao modelo (o ml-cd também faz)
@@ -307,7 +307,8 @@ em todos os caminhos, sem depender do ciclo do time de dados.
    - **Data profiling** (`resources/inference_profile.py`): perfil de inferência sobre essa tabela,
      com a baseline gravada pelo treino; calcula PSI, KS e qui-quadrado por coluna, por dia, versão
      do modelo e segmento, e gera um painel.
-   - `src/monitoring/monitor_model.py`: pede o refresh do perfil e espera terminar.
+   - `src/monitoring/monitor_model.py`: pede o refresh do perfil, roda as consultas dos alertas e, se
+     algum limite foi ultrapassado, posta no Google Chat.
    - **SQL alerts** (`resources/model_alerts.py`), como a documentação do data profiling recomenda:
      consultas sobre as tabelas de métricas, avaliadas todo dia às 8h, que avisam por e-mail. Ver
      [Alertas](#alertas).
@@ -447,33 +448,46 @@ flowchart LR
 
 Uma mudança no pipeline não reimplanta o modelo, e vice-versa. Os deploys usam os secrets
 `DATABRICKS_HOST` e `DATABRICKS_TOKEN` e o environment `databricks` do GitHub, onde dá para exigir
-aprovação antes do deploy. O `ml-cd` também lê as variáveis `ALERT_EMAIL` e `ALERT_DESTINATION_ID` desse
-environment (ver [Alertas](#alertas)).
+aprovação antes do deploy. Quem recebe os avisos não passa pelo GitHub: fica em secrets do Databricks
+(ver [Alertas](#alertas)).
 
 ### Alertas
 
-Quem recebe fica fora do código (o repositório é público): duas variáveis do bundle, preenchidas no CI
-pelas variáveis do environment `databricks` do GitHub e, localmente, por `BUNDLE_VAR_<nome>`.
+Quem recebe fica fora do repositório (que é público), no secret scope `credit_ml` do Databricks. O deploy
+lê os secrets pelos resources em Python (`resources/notifications.py`), e o job de monitoramento lê o
+webhook em tempo de execução. Quem faz o deploy precisa de READ no scope.
 
-| Variável do bundle | No GitHub | Para quê |
-| --- | --- | --- |
-| `alert_email` | `ALERT_EMAIL` | falha dos jobs de ML e falha do refresh do perfil de inferência |
-| `alert_destination_id` | `ALERT_DESTINATION_ID` | SQL alerts |
+| Secret (`credit_ml/…`) | Para quê |
+| --- | --- |
+| `alert_email` | falha dos jobs de ML e falha do refresh do perfil de inferência |
+| `alert_destination_id` | notification destination (e-mail) dos SQL alerts |
+| `google_chat_webhook` | URL do webhook do espaço do Google Chat (é uma credencial: `key` e `token`) |
 
-Os SQL alerts só avisam e-mails de fora do workspace por um *notification destination*, criado uma vez
-(precisa de admin do workspace) e informado pelo id:
+Para configurar (uma vez; o notification destination precisa de admin do workspace):
 
 ```bash
+databricks secrets create-scope credit_ml
+databricks secrets put-secret credit_ml alert_email --string-value voce@empresa.com
 databricks notification-destinations create --json \
   '{"display_name": "credit_ml · alertas do modelo", "config": {"email": {"addresses": ["voce@empresa.com"]}}}'
+databricks secrets put-secret credit_ml alert_destination_id --string-value <id devolvido acima>
+databricks secrets put-secret credit_ml google_chat_webhook --string-value '<url do webhook>'
 ```
 
-| Alerta | Fonte | Avisa quando |
-| --- | --- | --- |
-| `credit_score · drift acima de 0,2 (PSI)` | `credit_score_inference_log_drift_metrics`, janela mais recente, contra a baseline | o maior PSI (qualquer coluna ou segmento) passa de 0,2 |
-| `credit_score · entrada fora do contrato acima de 2%` | `chamadas_endpoint` (7 dias) e o último lote da `propostas_quarentena` | a maior das duas taxas passa de 2% |
-| falha de job | `credit_training`, `credit_features`, `credit_batch_scoring`, `credit_monitoring` | o job falha |
-| falha do perfil | perfil de inferência | o refresh falha |
+| Aviso | Fonte | Por onde | Quando |
+| --- | --- | --- | --- |
+| `credit_score · drift acima de 0,2 (PSI)` | `credit_score_inference_log_drift_metrics`, janela mais recente, contra a baseline | SQL alert (e-mail), todo dia às 8h, e Google Chat depois de cada monitoramento | o maior PSI (qualquer coluna ou segmento) passa de 0,2 |
+| `credit_score · entrada fora do contrato acima de 2%` | `chamadas_endpoint` (7 dias) e o último lote da `propostas_quarentena` | idem | a maior das duas taxas passa de 2% |
+| falha de job | `credit_training`, `credit_features`, `credit_batch_scoring`, `credit_monitoring` | e-mail | o job falha |
+| falha do perfil | perfil de inferência | e-mail | o refresh falha |
+
+As consultas ficam em `resources/alerts/` e servem aos dois caminhos; os limites estão em
+`resources/model_alerts.py` e em `credit_score.monitoring` (`DRIFT_LIMIT`, `OUT_OF_CONTRACT_LIMIT`).
+
+> **Por que o Chat não é um notification destination.** O Google Chat só aceita mensagens com o campo
+> `text` (ou `cardsV2`) e recusa qualquer outro campo; o webhook genérico do Databricks manda um JSON
+> próprio. Por isso o job de monitoramento monta o `text` e posta direto. Slack e Microsoft Teams são
+> destinos nativos e não precisariam disso.
 
 Ficam sem aviso por e-mail:
 

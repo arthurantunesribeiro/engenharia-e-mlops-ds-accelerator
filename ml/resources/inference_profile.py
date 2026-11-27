@@ -4,6 +4,8 @@ from databricks.bundles.data_quality_monitors import DataQualityMonitor
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import NotFound
 
+from resources.notifications import secret
+
 INFERENCE_LOG = "main.credit_ml.credit_score_inference_log"
 
 
@@ -39,7 +41,7 @@ def load_resources(bundle: Bundle) -> Resources:
             },
             "baseline_table_name": "main.credit_ml.credit_score_baseline",
             "slicing_exprs": ["segmento"],
-            "notification_settings": {"on_failure": {"email_addresses": ["${var.alert_email}"]}},   # refresh falhou
+            "notification_settings": {"on_failure": {"email_addresses": [secret("alert_email")]}},   # refresh falhou
         },
     }))
     return resources

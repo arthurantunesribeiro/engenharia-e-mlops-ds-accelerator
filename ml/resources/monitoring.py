@@ -35,16 +35,18 @@ def load_resources(bundle: Bundle) -> Resources:
             "primeiro scoring batch e das primeiras chamadas ao endpoint")
         return resources
 
-    task = lambda key, script, **kw: {   # noqa: E731
-        "task_key": key, "environment_key": "default",
-        "spark_python_task": {"python_file": f"${{workspace.file_path}}/src/monitoring/{script}"}, **kw}
+    def task(key: str, script: str, parameters: tuple = (), **kw) -> dict:
+        return {"task_key": key, "environment_key": "default", **kw,
+                "spark_python_task": {"python_file": f"${{workspace.file_path}}/src/monitoring/{script}",
+                                      "parameters": list(parameters)}}
+
     resources.add_resource("monitoring", Job.from_dict({
         "name": "credit_monitoring",
-        "email_notifications": {"on_failure": ["${var.alert_email}"]},
         "trigger": {"table_update": {"table_names": TRIGGER_TABLES, "condition": "ANY_UPDATED",
                                      "min_time_between_triggers_seconds": 3600}},
         "environments": [{"environment_key": "default", "spec": "${var.job_environment}"}],
         "tasks": [task("build_inference_log", "build_inference_log.py"),
-                  task("monitor_model", "monitor_model.py", depends_on=[{"task_key": "build_inference_log"}])],
+                  task("monitor_model", "monitor_model.py", ("--queries", "${workspace.file_path}/resources/alerts"),
+                       depends_on=[{"task_key": "build_inference_log"}])],
     }))
     return resources
