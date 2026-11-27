@@ -26,6 +26,12 @@ ALERTS = {   # limites iguais aos de credit_score.monitoring (DRIFT_LIMIT, OUT_O
     "credit_score_fora_do_contrato": ("fora_do_contrato.sql", "maior_taxa_fora_do_contrato", 0.02,
                                       "credit_score · entrada fora do contrato acima de 2%"),
 }
+# Template da notificação (variáveis {{...}} do SQL alert; HTML só aparece formatado no e-mail). A tabela traz
+# todas as colunas da consulta: no drift, onde está o maior PSI e quantas colunas passaram do limite.
+SUMMARY = "[credit_score] {{ALERT_NAME}}: {{ALERT_STATUS}}"
+DESCRIPTION = """<p><b>{{ALERT_COLUMN}} = {{QUERY_RESULT_VALUE}}</b> ({{ALERT_CONDITION}} {{ALERT_THRESHOLD}})</p>
+{{QUERY_RESULT_TABLE}}
+<p><a href="{{ALERT_URL}}">Abrir o alerta</a></p>"""
 
 
 def load_resources(bundle: Bundle) -> Resources:
@@ -44,6 +50,8 @@ def load_resources(bundle: Bundle) -> Resources:
             "warehouse_id": "${var.warehouse_id}",
             "query_text": (QUERIES / query_file).read_text(),
             "schedule": SCHEDULE,
+            "custom_summary": SUMMARY,
+            "custom_description": DESCRIPTION,
             "evaluation": {
                 "source": {"name": column},
                 "comparison_operator": "GREATER_THAN",

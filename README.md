@@ -481,6 +481,12 @@ databricks secrets put-secret credit_ml google_chat_webhook --string-value '<url
 | falha de job | `credit_training`, `credit_features`, `credit_batch_scoring`, `credit_monitoring` | e-mail | o job falha |
 | falha do perfil | perfil de inferência | e-mail | o refresh falha |
 
+O e-mail dos SQL alerts usa um template próprio (`custom_summary` e `custom_description` em
+`resources/model_alerts.py`): assunto `[credit_score] <alerta>: <estado>`, o valor contra o limite e a
+tabela do resultado da consulta (no drift, onde está o maior PSI e quantas colunas passaram do limite).
+O template não serve para o Google Chat: num webhook, o Databricks manda o próprio JSON, com o corpo
+personalizado dentro dele (`alert.description`).
+
 As consultas ficam em `resources/alerts/` e servem aos dois caminhos; os limites estão em
 `resources/model_alerts.py` e em `credit_score.monitoring` (`DRIFT_LIMIT`, `OUT_OF_CONTRACT_LIMIT`).
 
