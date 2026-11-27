@@ -458,9 +458,9 @@ pelas variáveis do environment `databricks` do GitHub e, localmente, por `BUNDL
 | Variável do bundle | No GitHub | Para quê |
 | --- | --- | --- |
 | `alert_email` | `ALERT_EMAIL` | falha dos jobs de ML e falha do refresh do perfil de inferência |
-| `alert_destination_id` | `ALERT_DESTINATION_ID` | SQL alerts e anomaly detection do schema `credit_ml` |
+| `alert_destination_id` | `ALERT_DESTINATION_ID` | SQL alerts |
 
-Os SQL alerts e o anomaly detection só avisam e-mails por um *notification destination*, criado uma vez
+Os SQL alerts só avisam e-mails de fora do workspace por um *notification destination*, criado uma vez
 (precisa de admin do workspace) e informado pelo id:
 
 ```bash
@@ -474,9 +474,14 @@ databricks notification-destinations create --json \
 | `credit_score · entrada fora do contrato acima de 2%` | `chamadas_endpoint` (7 dias) e o último lote da `propostas_quarentena` | a maior das duas taxas passa de 2% |
 | falha de job | `credit_training`, `credit_features`, `credit_batch_scoring`, `credit_monitoring` | o job falha |
 | falha do perfil | perfil de inferência | o refresh falha |
-| tabela desatualizada ou incompleta | anomaly detection do schema `credit_ml` | o Databricks marca uma tabela como não saudável |
 
-O `credit_deployment` fica sem aviso de falha: a tarefa de aprovação falha de propósito até a aprovação.
+Ficam sem aviso por e-mail:
+
+- **o anomaly detection do schema** (tabela desatualizada ou incompleta): ele não aceita destino de
+  e-mail, só integrações (Slack, Microsoft Teams, webhook e afins) ou usuários do workspace. Os
+  resultados ficam na aba *Quality* do schema; com uma integração, basta apontar
+  `anomaly_detection_config.notification_settings.on_unhealthy_table` em `resources/foundation.yml`.
+- **o `credit_deployment`**: a tarefa de aprovação falha de propósito até a aprovação.
 
 As dependências do `ml/` ficam no `pyproject.toml` e no `uv.lock`, em dependency groups: `dev` (testes, nas versões
 do ambiente de treino e do endpoint) e `bundle` (o que o código Python do bundle importa). Localmente, em `ml/`:

@@ -23,6 +23,6 @@ resources:
     credit_ml_anomaly_detection:
       object_type: schema
       object_id: ${resources.schemas.credit_ml.schema_id}
-      anomaly_detection_config:
-        notification_settings:                   # tabela do schema desatualizada ou incompleta
-          on_unhealthy_table: {destination_ids: ["${var.alert_destination_id}"]}
+      # sem notificação: o anomaly detection não aceita destino de e-mail, só Slack, Teams, webhook e
+      # afins, ou usuários do workspace (destination_user_ids)
+      anomaly_detection_config: {}

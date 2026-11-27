@@ -18,7 +18,7 @@ variables:
   alert_email:
     description: E-mail que recebe falhas dos jobs e do perfil de inferência (no CI, vars.ALERT_EMAIL; local, BUNDLE_VAR_alert_email)
   alert_destination_id:
-    description: Notification destination (e-mail) dos SQL alerts e do anomaly detection (vars.ALERT_DESTINATION_ID)
+    description: Notification destination (e-mail) dos SQL alerts (vars.ALERT_DESTINATION_ID)
   warehouse_id:
     description: SQL warehouse que roda os SQL alerts
     lookup: {warehouse: Serverless Starter Warehouse}
