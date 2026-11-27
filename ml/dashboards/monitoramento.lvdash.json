@@ -371,44 +371,113 @@
               "encodings": {
                 "columns": [
                   {
-                    "fieldName": "coluna",
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "allowSearch": false,
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "displayAs": "string",
                     "displayName": "Coluna",
+                    "fieldName": "coluna",
+                    "highlightLinks": false,
+                    "imageHeight": "",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "linkOpenInNewTab": true,
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "order": 0,
+                    "preserveWhitespace": false,
                     "title": "Coluna",
                     "type": "string",
-                    "order": 0,
-                    "visible": true,
-                    "displayAs": "string",
-                    "alignContent": "left"
+                    "useMonospaceFont": false,
+                    "visible": true
                   },
                   {
-                    "fieldName": "segmento",
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "allowSearch": false,
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "displayAs": "string",
                     "displayName": "Segmento",
+                    "fieldName": "segmento",
+                    "highlightLinks": false,
+                    "imageHeight": "",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "linkOpenInNewTab": true,
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "order": 1,
+                    "preserveWhitespace": false,
                     "title": "Segmento",
                     "type": "string",
-                    "order": 1,
-                    "visible": true,
-                    "displayAs": "string",
-                    "alignContent": "left"
+                    "useMonospaceFont": false,
+                    "visible": true
                   },
                   {
-                    "fieldName": "psi",
+                    "alignContent": "right",
+                    "allowHTML": false,
+                    "allowSearch": false,
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "displayAs": "number",
                     "displayName": "PSI",
+                    "fieldName": "psi",
+                    "highlightLinks": false,
+                    "imageHeight": "",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "linkOpenInNewTab": true,
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "numberFormat": "0.000",
+                    "order": 2,
+                    "preserveWhitespace": false,
                     "title": "PSI",
                     "type": "float",
-                    "order": 2,
-                    "visible": true,
-                    "displayAs": "number",
-                    "alignContent": "right"
+                    "useMonospaceFont": false,
+                    "visible": true
                   },
                   {
-                    "fieldName": "situacao",
+                    "alignContent": "left",
+                    "allowHTML": false,
+                    "allowSearch": false,
+                    "booleanValues": [
+                      "false",
+                      "true"
+                    ],
+                    "displayAs": "string",
                     "displayName": "Situação",
+                    "fieldName": "situacao",
+                    "highlightLinks": false,
+                    "imageHeight": "",
+                    "imageTitleTemplate": "{{ @ }}",
+                    "imageUrlTemplate": "{{ @ }}",
+                    "imageWidth": "",
+                    "linkOpenInNewTab": true,
+                    "linkTextTemplate": "{{ @ }}",
+                    "linkTitleTemplate": "{{ @ }}",
+                    "linkUrlTemplate": "{{ @ }}",
+                    "order": 3,
+                    "preserveWhitespace": false,
                     "title": "Situação",
                     "type": "string",
-                    "order": 3,
-                    "visible": true,
-                    "displayAs": "string",
-                    "alignContent": "left"
+                    "useMonospaceFont": false,
+                    "visible": true
                   }
                 ]
               },
@@ -417,7 +486,10 @@
                 "title": "PSI na janela mais recente",
                 "showDescription": true,
                 "description": "Por coluna e segmento, do maior para o menor"
-              }
+              },
+              "allowHTMLByDefault": false,
+              "invisibleColumns": [],
+              "paginationSize": "default"
             },
             "name": "w08"
           },
