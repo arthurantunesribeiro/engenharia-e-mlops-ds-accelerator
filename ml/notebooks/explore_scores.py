@@ -34,12 +34,13 @@ display(table("propostas_quarentena").select("barrado_em", F.explode("falhas").a
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Chamadas ao endpoint (tabela de inferência)
+# MAGIC ### Chamadas ao endpoint (registradas pelo serviço)
 
 # COMMAND ----------
 
-display(table("credit_score_payload").groupBy(F.to_date("request_time").alias("dia"), "status_code")
-        .count().orderBy("dia", "status_code"))
+display(table("chamadas_endpoint").groupBy(F.to_date("request_time").alias("dia"), "status_code")
+        .agg(F.count("*").alias("chamadas"), F.expr("percentile(latencia_ms, 0.95)").alias("p95_ms"))
+        .orderBy("dia", "status_code"))
 
 # COMMAND ----------
 

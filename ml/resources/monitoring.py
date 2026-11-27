@@ -1,15 +1,15 @@
 """Job de monitoramento, declarado em Python: só existe quando as tabelas que o disparam existem.
 
 O gatilho `table_update` exige tabelas existentes, e as duas nascem depois do primeiro champion: a
-`scores_credito` no primeiro scoring batch e a `credit_score_payload` (tabela de inferência) com o
-endpoint. Até lá o job fica de fora, com um aviso, e o deploy do bundle não falha.
+`scores_credito` no primeiro scoring batch e a `chamadas_endpoint` quando o serviço registra as primeiras
+chamadas ao endpoint. Até lá o job fica de fora, com um aviso, e o deploy do bundle não falha.
 """
 from databricks.bundles.core import Bundle, Resources
 from databricks.bundles.jobs import Job
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import NotFound
 
-TRIGGER_TABLES = ["main.credit_ml.scores_credito", "main.credit_ml.credit_score_payload"]   # batch e endpoint
+TRIGGER_TABLES = ["main.credit_ml.scores_credito", "main.credit_ml.chamadas_endpoint"]   # batch e endpoint
 
 
 def load_resources(bundle: Bundle) -> Resources:
@@ -32,7 +32,7 @@ def load_resources(bundle: Bundle) -> Resources:
     if missing:
         resources.add_diagnostic_warning(
             f"{', '.join(missing)} ainda não existe(m): o job de monitoramento fica para o deploy depois do "
-            "primeiro scoring batch e do endpoint")
+            "primeiro scoring batch e das primeiras chamadas ao endpoint")
         return resources
 
     task = lambda key, script, **kw: {   # noqa: E731

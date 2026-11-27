@@ -44,7 +44,7 @@ def out_of_contract_rate(spark: SparkSession) -> float:
     Returns:
         Fração entre 0 e 1.
     """
-    calls = spark.table(f"{ML_SCHEMA}.credit_score_payload")
+    calls = spark.table(f"{ML_SCHEMA}.chamadas_endpoint")
     endpoint_rate = calls.filter("status_code = 400").count() / max(calls.count(), 1)
     quarantine = spark.table(f"{ML_SCHEMA}.propostas_quarentena")
     last_batch = quarantine.filter(F.col("barrado_em") == quarantine.agg(F.max("barrado_em")).first()[0]).count()

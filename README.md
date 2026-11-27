@@ -97,16 +97,18 @@ flowchart LR
         champion{{"alias champion"}}
         endpoint["endpoint credit-score"]
         scoring["credit_batch_scoring"]
-        payload[("credit_score_payload<br/>tabela de inferência")]
+        service["serviço de crédito<br/>query_endpoint"]
+        calls[("chamadas_endpoint<br/>registradas pelo serviço")]
         scores[("scores_credito")]
         monitoring["credit_monitoring"]
         profiling["data profiling<br/>drift e painel"]
         training --> champion
         champion -- "bundle deploy" --> endpoint
         champion -. "usado por" .-> scoring
-        endpoint --> payload
+        service -- "chama" --> endpoint
+        service -- "registra cada chamada" --> calls
         scoring --> scores
-        payload -- "atualização" --> monitoring
+        calls -- "atualização" --> monitoring
         scores -- "atualização" --> monitoring
         monitoring --> profiling
     end
@@ -134,14 +136,16 @@ cd data && databricks bundle deploy && databricks bundle run source_simulation &
 #   a chegada dos arquivos dispara a ingestão: espere o pipeline terminar
 
 cd ml && uv sync                              # cria ml/.venv com o pacote, os testes e o que o bundle importa
-databricks bundle deploy                       # sem champion nem tabela de inferência: avisa e pula endpoint e perfil
+databricks bundle deploy                       # sem champion: avisa e pula endpoint, monitoramento e perfil
 databricks bundle run features                 # features_cliente; depois, cada atualização da ABT a refaz
 uv run python scripts/connect_deployment_job.py   # liga o deployment job ao modelo (o ml-cd também faz)
 databricks bundle run training                 # registra a v1 como challenger e grava a baseline
 #   o deployment job dispara sozinho e para na aprovação: aprove a v1 na página da versão
 #   (Unity Catalog › credit_score › versão 1 › Approve); o deploy move o champion
-databricks bundle deploy                       # publica o endpoint (e a tabela de inferência)
-databricks bundle run batch_scoring
+databricks bundle deploy                       # publica o endpoint
+databricks bundle run batch_scoring            # scores_credito
+#   rode notebooks/query_endpoint.py: o serviço chama o endpoint e grava chamadas_endpoint
+databricks bundle deploy                       # cria o job de monitoramento (as duas tabelas do gatilho existem)
 databricks bundle run monitoring --only build_inference_log
 databricks bundle deploy                       # cria o perfil de inferência
 #   pelo GitHub, os deploys são o ml-cd: rode-o manualmente (Actions › ml-cd › Run workflow) entre as etapas
@@ -277,17 +281,25 @@ em todos os caminhos, sem depender do ciclo do time de dados.
      loss, validação por segmento, portão de AUC, **validação pré-deploy** do pacote, registro com
      **express deployment** e alias `challenger`.
 2. **Deploy** (`bundle deploy`, feito pelo CD): `resources/serving.py` lê o alias `champion` e
-   publica o endpoint `credit-score`, com tabela de inferência.
+   publica o endpoint `credit-score`.
 3. **Scoring batch** (job `credit_batch_scoring`, disparado quando chegam propostas novas): as
    propostas passam pelo contrato em SQL; as que falham vão para a quarentena com o motivo, e o resto
    é pontuado pelo `champion`.
 4. **Consumir o modelo** (`notebooks/query_endpoint.py`): o serviço de crédito monta a requisição
    (histórico + proposta + eventos recentes), o endpoint responde score, faixa e motivos e recusa o
-   que está fora do contrato (HTTP 400); latência p50/p95.
+   que está fora do contrato (HTTP 400); latência p50/p95. O serviço registra cada chamada (entradas,
+   score, status, latência e versão servida) em `chamadas_endpoint`, com `credit_score.service.call_record`.
+
+   > **Inference tables.** O Model Serving pode registrar sozinho cada requisição e resposta numa
+   > tabela Delta (inference table do AI Gateway, `ai_gateway.inference_table_config` no endpoint). Isso
+   > simplifica o processo: o registro vale para qualquer cliente, sem código no serviço, e não depende de
+   > cada cliente lembrar de gravar. O recurso não está disponível no Databricks Free Edition
+   > (`FEATURE_DISABLED`), por isso aqui o próprio serviço grava as chamadas. Num workspace pago, basta
+   > ligar a inference table em `resources/serving.py` e trocar a fonte do endpoint em
+   > `build_inference_log.py`.
 5. **Monitoramento** (job `credit_monitoring`, disparado quando o modelo pontua):
-   - `src/monitoring/build_inference_log.py`: junta as chamadas ao endpoint (a tabela de inferência
-     do AI Gateway, de JSON para uma linha por proposta, com a versão do modelo) e o scoring batch
-     em `credit_score_inference_log`.
+   - `src/monitoring/build_inference_log.py`: junta as chamadas aceitas pelo endpoint
+     (`chamadas_endpoint`, já com a versão do modelo) e o scoring batch em `credit_score_inference_log`.
    - **Data profiling** (`resources/inference_profile.py`): perfil de inferência sobre essa tabela,
      com a baseline gravada pelo treino; calcula PSI, KS e qui-quadrado por coluna, por dia, versão
      do modelo e segmento, e gera um painel.
@@ -397,7 +409,7 @@ As regras de domínio ficam num lugar só, `src/credit_score/contract.py`:
 | Antes do registro | `validate_serving_input` com um caso válido e um fora | a versão não é registrada |
 | Scoring batch | `contract_sql_rules()` | a linha vai para `propostas_quarentena`; acima de 5%, o job para |
 | Endpoint | assinatura MLflow (colunas e tipos) + contrato no `predict` | HTTP 400 com a regra quebrada |
-| Monitoramento | tabela de inferência (`status_code`) e quarentena | alerta acima de 2% |
+| Monitoramento | `chamadas_endpoint` (`status_code`) e quarentena | alerta acima de 2% |
 
 
 ### Números de referência

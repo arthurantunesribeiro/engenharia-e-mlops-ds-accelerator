@@ -5,6 +5,10 @@
 # MAGIC A tela da analista pede o score de uma proposta: o serviço de crédito junta o histórico do
 # MAGIC cliente (`features_cliente`) com a proposta e chama o endpoint `credit-score`.
 # MAGIC
+# MAGIC O serviço também registra cada chamada (entradas, score, status, latência e versão servida) em
+# MAGIC `main.credit_ml.chamadas_endpoint`, que o monitoramento usa. Uma inference table do Model Serving
+# MAGIC faria esse registro sozinha, para qualquer cliente, mas não está disponível no Databricks Free Edition.
+# MAGIC
 # MAGIC A primeira célula instala o projeto `ml/` (a pasta acima desta) como pacote, igual aos jobs.
 
 # COMMAND ----------
@@ -16,16 +20,21 @@
 
 import json
 import time
+from datetime import datetime
 
 import numpy as np
+from databricks.sdk import WorkspaceClient
 from mlflow.deployments import get_deploy_client
 
 from credit_score.features import INPUT_COLUMNS
-from credit_score.service import build_request
+from credit_score.service import CALL_LOG_SCHEMA, build_request, call_record, status_code_of
 
 ENDPOINT = "credit-score"   # resources/serving.py
+CALL_LOG = "main.credit_ml.chamadas_endpoint"
 client = get_deploy_client("databricks")
 customers = spark.table("main.credit_ml.features_cliente")
+served_version = WorkspaceClient().serving_endpoints.get(ENDPOINT).config.served_entities[0].entity_version
+calls = []   # registros das chamadas, gravados em CALL_LOG no fim
 
 
 def customer_history(customer_id: int) -> dict:
@@ -34,7 +43,19 @@ def customer_history(customer_id: int) -> dict:
 
 
 def request_score(row: dict):
-    return client.predict(endpoint=ENDPOINT, inputs={"dataframe_records": [row]})
+    """Chama o endpoint e registra a chamada, aceita ou recusada."""
+    started, start = datetime.now(), time.perf_counter()
+    try:
+        out = client.predict(endpoint=ENDPOINT, inputs={"dataframe_records": [row]})
+    except Exception as error:
+        calls.append(call_record(row, request_time=started, status_code=status_code_of(error),
+                                 latency_ms=(time.perf_counter() - start) * 1000, model_version=served_version,
+                                 error=str(error)[-500:]))
+        raise
+    calls.append(call_record(row, request_time=started, status_code=200,
+                             latency_ms=(time.perf_counter() - start) * 1000, model_version=served_version,
+                             prediction=out["predictions"][0]))
+    return out
 
 # COMMAND ----------
 
@@ -72,8 +93,7 @@ for case, payload in cases.items():
 
 # MAGIC %md
 # MAGIC ### Latência e tráfego de produção
-# MAGIC A primeira chamada depois de um tempo parado inclui o cold start (scale to zero). As chamadas
-# MAGIC ficam na tabela de inferência, que o monitoramento usa.
+# MAGIC A primeira chamada depois de um tempo parado inclui o cold start (scale to zero).
 
 # COMMAND ----------
 
@@ -88,3 +108,15 @@ for _, r in requests.iterrows():
         rejected += 1
 print(f"p50 = {np.percentile(latencies, 50):.0f} ms · p95 = {np.percentile(latencies, 95):.0f} ms · "
       f"{rejected} recusada(s) pelo contrato")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Registrar as chamadas
+# MAGIC O serviço grava o que chamou; a nova linha na tabela dispara o job de monitoramento.
+
+# COMMAND ----------
+
+(spark.createDataFrame(calls, schema=CALL_LOG_SCHEMA)
+ .write.mode("append").saveAsTable(CALL_LOG))
+print(f"{len(calls)} chamadas registradas em {CALL_LOG}")
