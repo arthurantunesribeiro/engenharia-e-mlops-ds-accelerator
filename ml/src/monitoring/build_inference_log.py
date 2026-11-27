@@ -9,10 +9,11 @@ O perfil sobre ela é declarado em `resources/inference_profile.py`.
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
+from credit_score.monitoring import PROFILE_COLUMN_TYPES, profile_columns
+
 ML_SCHEMA = "main.credit_ml"
 INFERENCE_LOG = f"{ML_SCHEMA}.credit_score_inference_log"
-COLUMNS = ["request_time", "versao_modelo", "origem", "segmento", "renda_mensal", "valor_solicitado", "prazo_meses",
-           "uso_limite", "atraso_medio_12m", "consultas_bureau_90d", "pedidos_ultimas_24h", "score", "faixa"]
+COLUMNS = list(PROFILE_COLUMN_TYPES)   # com os tipos da baseline: o data profiling exige o mesmo tipo nas duas
 
 
 def endpoint_predictions(calls: DataFrame) -> DataFrame:
@@ -24,7 +25,7 @@ def endpoint_predictions(calls: DataFrame) -> DataFrame:
     Returns:
         DataFrame nas colunas de `COLUMNS`.
     """
-    return calls.filter("status_code = 200").withColumn("origem", F.lit("endpoint")).select(*COLUMNS)
+    return calls.filter("status_code = 200").withColumn("origem", F.lit("endpoint")).selectExpr(*profile_columns(COLUMNS))
 
 
 def batch_predictions(scores: DataFrame) -> DataFrame:
@@ -39,7 +40,7 @@ def batch_predictions(scores: DataFrame) -> DataFrame:
     return (scores.withColumn("request_time", F.col("pontuado_em"))
             .withColumn("versao_modelo", F.col("versao_modelo").cast("string"))
             .withColumn("origem", F.lit("batch"))
-            .select(*COLUMNS))
+            .selectExpr(*profile_columns(COLUMNS)))
 
 
 def main() -> None:

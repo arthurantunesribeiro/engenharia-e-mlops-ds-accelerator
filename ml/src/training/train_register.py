@@ -27,6 +27,7 @@ import credit_score
 from credit_score.contract import INPUT_CONTRACT
 from credit_score.evaluation import split_in_time
 from credit_score.features import INPUT_COLUMNS, build_features
+from credit_score.monitoring import profile_columns
 from credit_score.model import (TARGET, CreditScoreModel, CreditScorePyfunc, band_table, compute_metrics,
                                 metrics_by_segment, model_requirements, train)
 
@@ -183,6 +184,7 @@ def main() -> None:
 
     baseline = valid_df[INPUT_COLUMNS].join(model.score(valid_df[INPUT_COLUMNS])[["score", "faixa"]])
     (spark.createDataFrame(baseline.assign(versao_modelo=str(version)))
+     .selectExpr(*profile_columns([*INPUT_COLUMNS, "score", "faixa", "versao_modelo"]))   # tipos do data profiling
      .write.mode("append").option("mergeSchema", "true").saveAsTable(BASELINE_TABLE))
 
 
