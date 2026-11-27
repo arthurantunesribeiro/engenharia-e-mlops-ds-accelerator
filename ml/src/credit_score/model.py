@@ -1,4 +1,5 @@
 """Treino calibrado, métricas de crédito, score com faixa e motivos, e o wrapper MLflow do endpoint."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -14,7 +15,6 @@ from credit_score.contract import validate_inputs
 from credit_score.features import FEATURES, build_features
 
 TARGET = "inadimplente_90d"
-# limite superior de probabilidade de cada faixa de risco (ilustrativos)
 RISK_BANDS = [(0.05, "A"), (0.10, "B"), (0.20, "C"), (0.35, "D"), (1.01, "E")]
 REASON_LABELS = {
     "comprometimento_renda": "parcela alta em relação à renda",
@@ -55,8 +55,12 @@ def compute_metrics(y, p) -> dict:
         Dicionário com `auc`, `gini`, `ks` e `log_loss`.
     """
     auc = roc_auc_score(y, p)
-    return {"auc": float(auc), "gini": float(2 * auc - 1), "ks": ks(y, p),
-            "log_loss": float(log_loss(y, np.clip(p, 1e-6, 1 - 1e-6)))}
+    return {
+        "auc": float(auc),
+        "gini": float(2 * auc - 1),
+        "ks": ks(y, p),
+        "log_loss": float(log_loss(y, np.clip(p, 1e-6, 1 - 1e-6))),
+    }
 
 
 def metrics_by_segment(df: pd.DataFrame, p, col: str = "segmento") -> pd.DataFrame:
@@ -112,8 +116,9 @@ def train(df: pd.DataFrame, algorithm: str = "logistic", **params):
     if algorithm == "logistic":
         base = make_pipeline(StandardScaler(), LogisticRegression(C=params.get("C", 1.0), max_iter=500))
     else:
-        base = HistGradientBoostingClassifier(learning_rate=params.get("learning_rate", 0.05),
-                                              max_depth=params.get("max_depth", 4), random_state=0)
+        base = HistGradientBoostingClassifier(
+            learning_rate=params.get("learning_rate", 0.05), max_depth=params.get("max_depth", 4), random_state=0
+        )
     model = CalibratedClassifierCV(base, cv=3, method="isotonic")
     model.fit(build_features(df), df[TARGET])
     return model
@@ -168,8 +173,14 @@ class CreditScoreModel:
             top = [c for c in row.sort_values(ascending=False).index[:3] if row[c] > 0.1]
             return "; ".join(REASON_LABELS[c] for c in top) or "sem fator de risco relevante"
 
-        return pd.DataFrame({"score": np.round(p, 4), "faixa": [risk_band(v) for v in p],
-                             "motivos": contrib.apply(reasons, axis=1).values}, index=inputs.index)
+        return pd.DataFrame(
+            {
+                "score": np.round(p, 4),
+                "faixa": [risk_band(v) for v in p],
+                "motivos": contrib.apply(reasons, axis=1).values,
+            },
+            index=inputs.index,
+        )
 
 
 def model_requirements() -> list[str]:
@@ -182,14 +193,21 @@ def model_requirements() -> list[str]:
         Lista no formato do `pip_requirements` do MLflow.
     """
     from importlib.metadata import PackageNotFoundError, version
+
     import joblib
     import sklearn
+
     try:
         mlflow_version = version("mlflow")
-    except PackageNotFoundError:          # só o skinny instalado: mesma versão, pacote completo
+    except PackageNotFoundError:
         mlflow_version = version("mlflow-skinny")
-    return [f"mlflow=={mlflow_version}", f"scikit-learn=={sklearn.__version__}", f"pandas=={pd.__version__}",
-            f"numpy=={np.__version__}", f"joblib=={joblib.__version__}"]
+    return [
+        f"mlflow=={mlflow_version}",
+        f"scikit-learn=={sklearn.__version__}",
+        f"pandas=={pd.__version__}",
+        f"numpy=={np.__version__}",
+        f"joblib=={joblib.__version__}",
+    ]
 
 
 try:
@@ -211,6 +229,7 @@ try:
                 context: Contexto do MLflow, com o artefato `credit_score_model`.
             """
             import joblib
+
             self.model = joblib.load(context.artifacts["credit_score_model"])
 
         def predict(self, context, model_input, params=None):
@@ -233,7 +252,8 @@ try:
             if len(bad):
                 detail = "; ".join(f"linha {i}: {', '.join(f)}" for i, f in bad.head(5).items())
                 raise MlflowException.invalid_parameter_value(
-                    f"{len(bad)} de {len(inputs)} propostas fora do contrato de entrada ({detail})")
+                    f"{len(bad)} de {len(inputs)} propostas fora do contrato de entrada ({detail})"
+                )
             return self.model.score(inputs)
 except ImportError:  # pragma: no cover
     pass

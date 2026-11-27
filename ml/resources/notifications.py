@@ -1,12 +1,5 @@
-"""Quem recebe os avisos: lido no deploy do secret scope `credit_ml`, fora do repositório (que é público).
+"""Destinatários dos avisos, lidos do secret scope `credit_ml` no deploy."""
 
-| Chave do secret          | Para quê                                                          |
-| ------------------------ | ----------------------------------------------------------------- |
-| `alert_email`            | falha dos jobs de ML e falha do refresh do perfil de inferência   |
-| `alert_destination_id`   | notification destination (e-mail) dos SQL alerts                  |
-
-Quem faz o deploy precisa de READ no scope.
-"""
 import base64
 import functools
 from dataclasses import replace
@@ -17,7 +10,7 @@ from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import NotFound
 
 SECRET_SCOPE = "credit_ml"
-NO_FAILURE_EMAIL = {"credit_deployment"}   # a tarefa de aprovação falha de propósito até a aprovação
+NO_FAILURE_EMAIL = {"credit_deployment"}
 
 
 @functools.cache
@@ -36,8 +29,10 @@ def secret(key: str) -> str:
     try:
         value = WorkspaceClient().secrets.get_secret(SECRET_SCOPE, key).value
     except NotFound as error:
-        raise RuntimeError(f"secret {SECRET_SCOPE}/{key} não existe: "
-                           f"databricks secrets put-secret {SECRET_SCOPE} {key} --string-value ...") from error
+        raise RuntimeError(
+            f"secret {SECRET_SCOPE}/{key} não existe: "
+            f"databricks secrets put-secret {SECRET_SCOPE} {key} --string-value ..."
+        ) from error
     return base64.b64decode(value).decode()
 
 

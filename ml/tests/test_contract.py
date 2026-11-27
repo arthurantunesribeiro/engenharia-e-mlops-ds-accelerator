@@ -2,8 +2,8 @@ import sqlite3
 
 import pandas as pd
 import pytest
-
 from conftest import PROPOSAL, proposal
+
 from credit_score.contract import contract_sql_rules, validate_inputs
 
 OUT_OF_CONTRACT = [

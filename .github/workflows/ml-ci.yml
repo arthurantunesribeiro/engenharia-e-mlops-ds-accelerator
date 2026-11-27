@@ -1,13 +1,12 @@
-# Time de ML: testa o pacote e o modelo a cada pull request e push na main que muda algo em ml/.
 name: ml-ci
 
 on:
   pull_request:
-    paths: ["ml/**", ".github/workflows/ml-*.yml"]
+    paths: ["ml/**", "ruff.toml", ".github/workflows/ml-*.yml"]
   push:
     branches: [main]
-    paths: ["ml/**", ".github/workflows/ml-*.yml"]
-  workflow_dispatch:   # rodar à mão; na main, o sucesso dispara o ml-cd
+    paths: ["ml/**", "ruff.toml", ".github/workflows/ml-*.yml"]
+  workflow_dispatch:
 
 jobs:
   tests:
@@ -18,10 +17,10 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with: {version: "0.13.6", python-version: "3.12", enable-cache: true, cache-dependency-glob: ml/uv.lock}
       - run: uv sync --locked --no-group bundle
+      - run: uv run --no-sync ruff format --check . && uv run --no-sync ruff check .
       - run: uv run --no-sync pytest -q
 
   model-environment:
-    # o pacote do modelo num ambiente recriado do zero, como o build do endpoint
     needs: tests
     runs-on: ubuntu-latest
     defaults: {run: {working-directory: ml}}

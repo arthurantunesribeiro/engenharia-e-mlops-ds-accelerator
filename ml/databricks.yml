@@ -1,5 +1,3 @@
-# Bundle do time de ML: consome as tabelas gold do time de dados e entrega o score.
-#   databricks bundle deploy      constrói a wheel do pacote credit_score e publica tudo
 bundle:
   name: credit_ml
   engine: direct
@@ -8,11 +6,11 @@ include:
   - resources/*.yml
 
 artifacts:
-  credit_score:                              # o pacote src/credit_score, como wheel
+  credit_score:
     type: whl
     path: .
     build: uv build --wheel
-    dynamic_version: true                    # cada deploy publica uma wheel nova, sem mexer na versão
+    dynamic_version: true
 
 variables:
   warehouse_id:
@@ -24,20 +22,20 @@ variables:
     default:
       environment_version: "4"
       dependencies:
-        - ./dist/*.whl                       # o bundle troca pelo caminho absoluto da wheel no workspace
+        - ./dist/*.whl
         - mlflow==3.17.2
         - databricks-sdk==0.155.0
-        - matplotlib==3.10.0                 # curvas do mlflow.models.evaluate no treino
+        - matplotlib==3.10.0
 
 python:
-  venv_path: .venv                           # criado por uv sync
+  venv_path: .venv
   resources:
-    - "resources.serving:load_resources"             # endpoint com a versão do alias champion
-    - "resources.monitoring:load_resources"          # job de monitoramento, quando as tabelas do gatilho existem
-    - "resources.inference_profile:load_resources"   # data profiling da tabela de inferência
-    - "resources.model_alerts:load_resources"        # SQL alerts de drift e de entrada fora do contrato
+    - "resources.serving:load_resources"
+    - "resources.monitoring:load_resources"
+    - "resources.inference_profile:load_resources"
+    - "resources.model_alerts:load_resources"
   mutators:
-    - "resources.notifications:failure_email"        # e-mail de falha nos jobs (secret credit_ml/alert_email)
+    - "resources.notifications:failure_email"
 
 targets:
   dev:

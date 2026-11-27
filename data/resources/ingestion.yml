@@ -1,4 +1,3 @@
-# O pipeline roda quando chegam arquivos na landing.
 resources:
   pipelines:
     credit_pipeline:

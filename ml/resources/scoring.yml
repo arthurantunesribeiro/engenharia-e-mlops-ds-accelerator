@@ -1,4 +1,3 @@
-# Pontua quando chegam propostas novas na gold.
 resources:
   jobs:
     batch_scoring:

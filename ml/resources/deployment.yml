@@ -1,25 +1,18 @@
-# Deployment job do modelo (MLflow 3): roda sozinho a cada versão nova de main.credit_ml.credit_score.
-#   evaluation  → a versão nova e o champion na mesma janela recente da ABT
-#   approval    → falha até alguém clicar em Approve na página da versão (tag approval=Approved)
-#   deployment  → move o champion e atualiza o endpoint
-# As tarefas são notebooks, como a documentação do deployment job pede; cada um instala o que usa com
-# %pip, e os parâmetros do job (model_name, model_version) chegam como widgets.
-# O bundle ainda não liga job e modelo: o ml-cd faz isso com scripts/connect_deployment_job.py.
 resources:
   jobs:
     deployment:
       name: credit_deployment
-      max_concurrent_runs: 1                     # duas promoções ao mesmo tempo disputariam o alias
+      max_concurrent_runs: 1
       parameters:
         - {name: model_name, default: main.credit_ml.credit_score}
         - {name: model_version, default: ""}
       tasks:
         - task_key: evaluation
           notebook_task: {notebook_path: ../notebooks/deployment/evaluation.py}
-        - task_key: approval                     # o nome é a chave da tag de aprovação
+        - task_key: approval   # o nome é a chave da tag de aprovação
           depends_on: [{task_key: evaluation}]
-          max_retries: 0                         # falhar é o esperado até a aprovação
-          disable_auto_optimization: true        # sem as tentativas automáticas do serverless
+          max_retries: 0   # falha de propósito até a aprovação
+          disable_auto_optimization: true
           notebook_task: {notebook_path: ../notebooks/deployment/approval.py}
         - task_key: deployment
           depends_on: [{task_key: approval}]

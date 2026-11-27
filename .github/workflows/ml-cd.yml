@@ -1,4 +1,3 @@
-# Time de ML: publica o bundle ml/ quando o ml-ci passa num push na main.
 name: ml-cd
 
 on:
@@ -6,7 +5,7 @@ on:
     workflows: [ml-ci]
     types: [completed]
     branches: [main]
-  workflow_dispatch:   # redeploy manual da main, por exemplo nas etapas do primeiro deploy
+  workflow_dispatch:
 
 concurrency: ml-cd
 
@@ -16,7 +15,7 @@ jobs:
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event.workflow_run.conclusion == 'success' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event.workflow_run.event))
     runs-on: ubuntu-latest
-    environment: databricks   # em Settings › Environments dá para exigir aprovação antes do deploy
+    environment: databricks
     defaults: {run: {working-directory: ml}}
     env:
       DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
@@ -24,9 +23,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: {ref: "${{ github.event.workflow_run.head_sha || github.sha }}"}   # exatamente o commit testado
-      - uses: astral-sh/setup-uv@v6                 # o bundle constrói a wheel com uv build
+      - uses: astral-sh/setup-uv@v6
         with: {version: "0.13.6", python-version: "3.12", enable-cache: true, cache-dependency-glob: ml/uv.lock}
-      - uses: databricks/setup-cli@v1.24.0   # mínimo exigido pelo databricks-bundles==1.24.0
-      - run: uv sync --locked --only-group bundle --no-install-project   # ml/.venv, com o que o bundle importa
+      - uses: databricks/setup-cli@v1.24.0
+      - run: uv sync --locked --only-group bundle --no-install-project
       - run: databricks bundle deploy
       - run: uv run --no-sync python scripts/connect_deployment_job.py   # o bundle ainda não liga job e modelo

@@ -1,6 +1,3 @@
-# Dashboard do modelo, em português: drift contra a baseline, faixas de risco treino x produção, recusas,
-# latência e quarentena. O data profiling também gera o painel padrão dele (em inglês) sobre a mesma tabela.
-# Editado na UI? Traga de volta com `databricks bundle generate dashboard --existing-path ... --force`.
 resources:
   dashboards:
     credit_score_monitoring:

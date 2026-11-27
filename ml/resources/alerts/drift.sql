@@ -1,4 +1,3 @@
--- Maior PSI contra a baseline do treino, na janela mais recente do perfil de inferência.
 WITH baseline_drift AS (
   SELECT window.start AS inicio, column_name, coalesce(slice_value, 'base inteira') AS fatia,
          population_stability_index AS psi

@@ -1,13 +1,4 @@
--- =====================================================================================
--- Pipeline de crédito no Lakeflow, de cima para baixo: bronze → silver → gold
--- Catálogo main, schema credit. Os arquivos chegam em /Volumes/main/credit/landing.
--- =====================================================================================
-
-
--- =====================================================================================
--- BRONZE: guardar como chegou. Streaming tables com Auto Loader (read_files): cada
--- arquivo é lido uma vez só. Duas colunas a mais: de qual arquivo veio e quando entrou.
--- =====================================================================================
+-- BRONZE: como chegou, cada arquivo lido uma vez, com a origem e a hora da carga
 
 CREATE OR REFRESH STREAMING TABLE bronze_parcelas
 COMMENT 'Parcelas exportadas pelo core bancário, tudo como texto'
@@ -33,11 +24,9 @@ AS SELECT * FROM STREAM read_files('/Volumes/main/credit/landing/propostas', for
   schema => 'contrato_id BIGINT, cliente_id BIGINT, pedido_em TIMESTAMP, valor_solicitado DOUBLE, prazo_meses INT, uso_limite DOUBLE, consultas_bureau_90d INT, pedidos_ultimas_24h INT');
 
 
--- =====================================================================================
--- SILVER: dado limpo, tipado e confiável.
--- =====================================================================================
+-- SILVER: limpo, tipado e confiável
 
--- Parcelas tipadas: valor brasileiro vira decimal, duas datas viram uma, CPF vira hash (LGPD).
+-- Parcelas tipadas: valor brasileiro vira decimal, duas datas viram uma, CPF vira hash
 CREATE TEMPORARY VIEW parcelas_tipadas AS
 SELECT
   try_cast(parcela_id AS BIGINT)                                         AS parcela_id,
@@ -53,8 +42,7 @@ SELECT
   _carga_em
 FROM bronze_parcelas;
 
--- Silver de parcelas: as regras de qualidade descartam a linha inválida (e contam quantas),
--- e as duplicadas saem (fica a carga mais recente de cada parcela).
+-- Linha inválida descartada pelas regras; duplicada sai (fica a carga mais recente)
 CREATE OR REFRESH MATERIALIZED VIEW silver_parcelas (
   CONSTRAINT contrato_presente      EXPECT (contrato_id IS NOT NULL) ON VIOLATION DROP ROW,
   CONSTRAINT valor_positivo         EXPECT (valor > 0)               ON VIOLATION DROP ROW,
@@ -65,7 +53,7 @@ AS SELECT parcela_id, contrato_id, numero, valor, vencimento, pago_em, cpf_hash
 FROM (SELECT *, row_number() OVER (PARTITION BY parcela_id ORDER BY _carga_em DESC) AS versao FROM parcelas_tipadas)
 WHERE versao = 1;
 
--- Quarentena: as mesmas regras ao contrário, com o motivo. Nada some sem deixar rastro.
+-- Quarentena: as mesmas regras ao contrário, com o motivo
 CREATE OR REFRESH MATERIALIZED VIEW quarentena_parcelas
 COMMENT 'Parcelas que violaram alguma regra, com o motivo'
 AS SELECT *,
@@ -76,8 +64,7 @@ AS SELECT *,
 FROM parcelas_tipadas
 WHERE contrato_id IS NULL OR coalesce(valor, 0) <= 0 OR vencimento IS NULL;
 
--- Contratos: o estado atual a partir dos eventos de CDC (SCD tipo 1).
--- SEQUENCE BY evento_em: vale a ordem do fato, não a da chegada; DELETE apaga o contrato.
+-- Contratos: estado atual pela ordem do fato (evento_em), não da chegada (SCD 1)
 CREATE OR REFRESH STREAMING TABLE silver_contratos
 COMMENT 'Estado atual de cada contrato';
 
@@ -89,7 +76,7 @@ SEQUENCE BY evento_em
 COLUMNS * EXCEPT (operacao, recebido_em, _arquivo, _carga_em)
 STORED AS SCD TYPE 1;
 
--- Renda: cada versão com o período em que valeu (__START_AT e __END_AT), SCD tipo 2.
+-- Renda: cada versão com o período em que valeu (SCD 2)
 CREATE OR REFRESH STREAMING TABLE silver_renda
 COMMENT 'Histórico de renda de cada cliente';
 
@@ -97,21 +84,19 @@ CREATE FLOW cdc_renda AS AUTO CDC INTO silver_renda
 FROM STREAM(bronze_renda)
 KEYS (cliente_id)
 SEQUENCE BY atualizado_em
-STORED AS SCD TYPE 2;   -- sem COLUMNS: todas as colunas (a cláusula só aceita lista ou * EXCEPT)
+STORED AS SCD TYPE 2;
 
 
--- =====================================================================================
--- GOLD: esquema estrela e as tabelas para o negócio e para o modelo.
--- =====================================================================================
+-- GOLD: esquema estrela, o indicador do negócio e as tabelas do modelo
 
--- Dimensão: uma linha por cliente, com a renda atual.
+-- Dimensão: uma linha por cliente, com a renda atual
 CREATE OR REFRESH MATERIALIZED VIEW dim_cliente
 COMMENT 'Uma linha por cliente'
 AS SELECT c.cliente_id, sha2(c.cpf, 256) AS cpf_hash, c.segmento, c.canal, r.renda_mensal
 FROM bronze_clientes c
 LEFT JOIN silver_renda r ON r.cliente_id = c.cliente_id AND r.__END_AT IS NULL;
 
--- Fato: só chaves e medidas. Dias de atraso medidos na data de corte (31/12/2025).
+-- Fato: chaves e medidas; atraso medido na data de corte (31/12/2025)
 CREATE OR REFRESH MATERIALIZED VIEW fato_parcelas
 COMMENT 'Uma linha por parcela'
 AS SELECT p.parcela_id, p.contrato_id, k.cliente_id, p.vencimento AS data_vencimento, p.numero, p.valor, p.pago_em,
@@ -120,7 +105,7 @@ AS SELECT p.parcela_id, p.contrato_id, k.cliente_id, p.vencimento AS data_vencim
 FROM silver_parcelas p
 JOIN silver_contratos k ON k.contrato_id = p.contrato_id;
 
--- Negócio: % de contratos de cada safra (mês de concessão) com atraso de 90+ dias nas 6 primeiras parcelas.
+-- Inadimplência 90d por safra e produto
 CREATE OR REFRESH MATERIALIZED VIEW gold_inadimplencia_safra
 COMMENT 'Inadimplência de 90 dias por safra e produto'
 AS SELECT date_format(k.data_concessao, 'yyyy-MM') AS safra, k.produto,
@@ -129,10 +114,7 @@ FROM (SELECT contrato_id, max(atraso_90) AS inadimplente FROM fato_parcelas WHER
 JOIN silver_contratos k USING (contrato_id)
 GROUP BY 1, 2;
 
--- ABT (One Big Table do modelo): uma linha por contrato na data da concessão.
--- Point-in-time: renda da época (SCD 2), atraso contado só até aquele dia, dados da proposta;
--- o alvo olha para depois. Só entram contratos com tempo de observação suficiente.
--- Se alguma regra falhar, a atualização falha: o modelo não treina com isso.
+-- ABT point-in-time: uma linha por contrato maturado, com o que se sabia na concessão e o alvo
 CREATE OR REFRESH MATERIALIZED VIEW gold_abt_credito (
   CONSTRAINT contrato_presente EXPECT (contrato_id IS NOT NULL)     ON VIOLATION FAIL UPDATE,
   CONSTRAINT renda_positiva    EXPECT (renda_mensal > 0)            ON VIOLATION FAIL UPDATE,
@@ -171,9 +153,7 @@ LEFT JOIN renda_na_data r ON r.contrato_id = b.contrato_id
 LEFT JOIN atraso_ate_a_data a ON a.contrato_id = b.contrato_id
 LEFT JOIN alvo t ON t.contrato_id = b.contrato_id;
 
--- Propostas ainda sem contrato: a entrada do scoring batch. As mesmas features da ABT, na data do
--- pedido, sem alvo. Sem expectations de propósito: quem barra proposta fora do domínio é o
--- contrato de entrada do modelo, no scoring (quarentena) e no endpoint (HTTP 400).
+-- Propostas sem contrato: as features da ABT na data do pedido; o contrato do modelo barra as sujas
 CREATE OR REFRESH MATERIALIZED VIEW gold_propostas_pendentes
 COMMENT 'Propostas sem contrato, com as features na data do pedido'
 AS WITH pendentes AS (

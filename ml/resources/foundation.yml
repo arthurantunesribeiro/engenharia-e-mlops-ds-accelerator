@@ -1,4 +1,3 @@
-# Onde o modelo e o que ele produz moram, e o anomaly detection do Databricks sobre o schema.
 resources:
   schemas:
     credit_ml:
@@ -23,6 +22,4 @@ resources:
     credit_ml_anomaly_detection:
       object_type: schema
       object_id: ${resources.schemas.credit_ml.schema_id}
-      # sem notificação: o anomaly detection não aceita destino de e-mail, só Slack, Teams, webhook e
-      # afins, ou usuários do workspace (destination_user_ids)
-      anomaly_detection_config: {}
+      anomaly_detection_config: {}   # sem notificação: não aceita destino de e-mail

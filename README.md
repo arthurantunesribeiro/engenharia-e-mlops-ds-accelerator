@@ -515,6 +515,8 @@ no treino), com as versões exatas e o `mlflow` completo que o endpoint precisa.
 ## Convenções
 
 Código (pastas, scripts, funções, variáveis) em inglês; docstrings no padrão Google, em português.
+Formatação e lint com o ruff (`ruff.toml` na raiz): em `ml/`, `uv run ruff format . && uv run ruff check .`;
+o `ml-ci` e o `data-cd` falham se o código não estiver formatado ou tiver aviso.
 Dados (tabelas e colunas) em português, como chegam dos sistemas de origem. Catálogo `main`: schema
 `credit` do time de dados e `credit_ml` do time de ML. Os dois bundles usam o motor de deploy `direct`,
 tudo serverless, nomes fixos e um alvo `dev`.

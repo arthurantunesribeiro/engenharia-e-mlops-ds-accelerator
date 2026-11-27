@@ -3,31 +3,29 @@ name = "credit-score"
 version = "0.1.0"
 description = "Score de inadimplência: contrato de entrada, features, modelo, serviço e monitoramento"
 requires-python = ">=3.10,<3.13"
-# o que a wheel exige; as versões exatas ficam no ambiente serverless dos jobs (databricks.yml)
 dependencies = ["pandas", "numpy", "scikit-learn", "joblib"]
 
 [dependency-groups]
-# testes: as mesmas versões do ambiente de treino e do endpoint
 dev = [
     "pandas==2.2.3",
     "numpy==2.2.5",
     "scikit-learn==1.6.1",
     "joblib==1.4.2",
     "mlflow-skinny==3.17.2",
-    "fastapi==0.115.12",   # servidor de scoring do MLflow nos testes do pacote do modelo
+    "fastapi==0.115.12",
     "httpx==0.28.1",
     "pytest==8.3.5",
-    "matplotlib==3.10.0",   # curvas do mlflow.models.evaluate, como no ambiente dos jobs
+    "matplotlib==3.10.0",
+    "ruff==0.17.6",
 ]
-# deploy: o código Python do bundle (resources/*.py), lido pelo databricks bundle deploy
 bundle = [
     "databricks-bundles==1.24.0",
     "databricks-sdk==0.155.0",
-    "mlflow-skinny==3.17.2",   # scripts/connect_deployment_job.py
+    "mlflow-skinny==3.17.2",
 ]
 
 [tool.uv]
-default-groups = ["dev", "bundle"]   # uv sync local instala tudo em ml/.venv
+default-groups = ["dev", "bundle"]
 
 [build-system]
 requires = ["hatchling==1.27.0"]

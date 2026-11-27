@@ -1,10 +1,5 @@
-"""Endpoint de score, declarado em Python para servir a versão do alias champion.
+"""Endpoint de score com a versão do alias champion (sem inference table no Free Edition)."""
 
-Sem inference table: no Databricks Free Edition ela não está disponível (FEATURE_DISABLED). Quem chama o
-endpoint registra cada chamada em `main.credit_ml.chamadas_endpoint` (`credit_score.service.call_record`).
-Onde houver, uma inference table do AI Gateway (`ai_gateway.inference_table_config`) faria esse registro
-sozinha, para qualquer cliente.
-"""
 from databricks.bundles.core import Bundle, Resources
 from databricks.bundles.model_serving_endpoints import ModelServingEndpoint
 from databricks.sdk import WorkspaceClient
@@ -25,17 +20,30 @@ def load_resources(bundle: Bundle) -> Resources:
     resources = Resources()
     try:
         version = WorkspaceClient().model_versions.get_by_alias(MODEL_NAME, "champion").version
-    except NotFound:   # workspace novo: o treino ainda não registrou o champion
+    except NotFound:
         resources.add_diagnostic_warning(
-            f"{MODEL_NAME} ainda não tem o alias champion: o endpoint fica para o deploy depois do primeiro treino")
+            f"{MODEL_NAME} ainda não tem o alias champion: o endpoint fica para o deploy depois do primeiro treino"
+        )
         return resources
 
-    resources.add_model_serving_endpoint("credit_score_endpoint", ModelServingEndpoint.from_dict({
-        "name": "credit-score",
-        "config": {
-            "served_entities": [{"name": "champion", "entity_name": MODEL_NAME, "entity_version": str(version),
-                                 "workload_size": "Small", "scale_to_zero_enabled": True}],
-            "traffic_config": {"routes": [{"served_model_name": "champion", "traffic_percentage": 100}]},
-        },
-    }))
+    resources.add_model_serving_endpoint(
+        "credit_score_endpoint",
+        ModelServingEndpoint.from_dict(
+            {
+                "name": "credit-score",
+                "config": {
+                    "served_entities": [
+                        {
+                            "name": "champion",
+                            "entity_name": MODEL_NAME,
+                            "entity_version": str(version),
+                            "workload_size": "Small",
+                            "scale_to_zero_enabled": True,
+                        }
+                    ],
+                    "traffic_config": {"routes": [{"served_model_name": "champion", "traffic_percentage": 100}]},
+                },
+            }
+        ),
+    )
     return resources

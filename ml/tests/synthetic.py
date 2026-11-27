@@ -1,4 +1,5 @@
 """Dados sintéticos no formato da ABT de crédito, para os testes."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -9,8 +10,14 @@ from credit_score.contract import SEGMENTS
 CHANNELS = ["app", "agencia", "correspondente"]
 
 
-def generate_abt(n: int = 20_000, start: str = "2025-01-01", months: int = 12, seed: int = 42,
-                 income_shift: float = 1.0, stress: float = 0.0) -> pd.DataFrame:
+def generate_abt(
+    n: int = 20_000,
+    start: str = "2025-01-01",
+    months: int = 12,
+    seed: int = 42,
+    income_shift: float = 1.0,
+    stress: float = 0.0,
+) -> pd.DataFrame:
     """Gera contratos com features na concessão e o alvo `inadimplente_90d`.
 
     Args:
@@ -38,22 +45,32 @@ def generate_abt(n: int = 20_000, start: str = "2025-01-01", months: int = 12, s
     channel = rng.choice(CHANNELS, n, p=[0.55, 0.25, 0.20])
 
     burden = np.clip((amount / term) / income, 0, 3)
-    logit = (-5.1 + 2.4 * burden + 1.6 * limit_usage + 0.08 * avg_delay + 0.18 * bureau_queries
-             + 0.45 * recent_requests - 0.6 * (segment == "consignado") - 0.4 * (segment == "alta_renda"))
+    logit = (
+        -5.1
+        + 2.4 * burden
+        + 1.6 * limit_usage
+        + 0.08 * avg_delay
+        + 0.18 * bureau_queries
+        + 0.45 * recent_requests
+        - 0.6 * (segment == "consignado")
+        - 0.4 * (segment == "alta_renda")
+    )
     target = rng.binomial(1, 1 / (1 + np.exp(-logit)))
 
-    return pd.DataFrame({
-        "contrato_id": np.arange(1, n + 1),
-        "cliente_id": rng.integers(1, max(2, n // 3) + 1, n),
-        "data_ref": dates.normalize(),
-        "segmento": segment,
-        "canal": channel,
-        "renda_mensal": income,
-        "valor_solicitado": amount,
-        "prazo_meses": term,
-        "uso_limite": np.round(limit_usage, 3),
-        "atraso_medio_12m": avg_delay,
-        "consultas_bureau_90d": bureau_queries,
-        "pedidos_ultimas_24h": recent_requests,
-        "inadimplente_90d": target,
-    })
+    return pd.DataFrame(
+        {
+            "contrato_id": np.arange(1, n + 1),
+            "cliente_id": rng.integers(1, max(2, n // 3) + 1, n),
+            "data_ref": dates.normalize(),
+            "segmento": segment,
+            "canal": channel,
+            "renda_mensal": income,
+            "valor_solicitado": amount,
+            "prazo_meses": term,
+            "uso_limite": np.round(limit_usage, 3),
+            "atraso_medio_12m": avg_delay,
+            "consultas_bureau_90d": bureau_queries,
+            "pedidos_ultimas_24h": recent_requests,
+            "inadimplente_90d": target,
+        }
+    )

@@ -1,4 +1,3 @@
--- Maior taxa de entrada fora do contrato: chamadas recusadas pelo endpoint (7 dias) ou último lote do batch.
 WITH endpoint AS (
   SELECT avg(CASE WHEN status_code = 400 THEN 1.0 ELSE 0.0 END) AS taxa
   FROM main.credit_ml.chamadas_endpoint

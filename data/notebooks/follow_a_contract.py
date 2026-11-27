@@ -22,7 +22,8 @@
 from pyspark.sql import functions as F
 
 LANDING = "/Volumes/main/credit/landing"
-table = lambda name: spark.table(f"main.credit.{name}")
+
+
 dbutils.widgets.text("contrato_id", "", "Contrato (vazio = escolha automática)")
 
 # COMMAND ----------
@@ -63,8 +64,12 @@ ORDER BY casos DESC, a.contrato_id
 chosen = dbutils.widgets.get("contrato_id")
 row = candidates.filter(f"contrato_id = {chosen}").first() if chosen else candidates.first()
 CONTRACT, CUSTOMER = row["contrato_id"], row["cliente_id"]
-print(f"Contrato {CONTRACT} (cliente {CUSTOMER}): "
-      + ", ".join(k for k in ("cdc_fora_de_ordem", "valor_brasileiro", "parcela_duplicada", "renda_revista_depois") if row[k]))
+print(
+    f"Contrato {CONTRACT} (cliente {CUSTOMER}): "
+    + ", ".join(
+        k for k in ("cdc_fora_de_ordem", "valor_brasileiro", "parcela_duplicada", "renda_revista_depois") if row[k]
+    )
+)
 
 # COMMAND ----------
 
@@ -74,11 +79,19 @@ print(f"Contrato {CONTRACT} (cliente {CUSTOMER}): "
 
 # COMMAND ----------
 
-landing_installments = (spark.read.option("header", True).csv(f"{LANDING}/parcelas")
-                        .filter(F.col("contrato_id") == str(CONTRACT)).orderBy(F.col("numero").cast("int")))
+landing_installments = (
+    spark.read.option("header", True)
+    .csv(f"{LANDING}/parcelas")
+    .filter(F.col("contrato_id") == str(CONTRACT))
+    .orderBy(F.col("numero").cast("int"))
+)
 display(landing_installments)
-display(spark.read.json(f"{LANDING}/contratos_cdc").filter(F.col("contrato_id") == CONTRACT)
-        .select("status", "operacao", "evento_em", "recebido_em").orderBy("recebido_em"))
+display(
+    spark.read.json(f"{LANDING}/contratos_cdc")
+    .filter(F.col("contrato_id") == CONTRACT)
+    .select("status", "operacao", "evento_em", "recebido_em")
+    .orderBy("recebido_em")
+)
 
 # COMMAND ----------
 
@@ -89,9 +102,12 @@ display(spark.read.json(f"{LANDING}/contratos_cdc").filter(F.col("contrato_id") 
 
 # COMMAND ----------
 
-bronze = table("bronze_parcelas").filter(F.col("contrato_id") == str(CONTRACT))
-display(bronze.select("parcela_id", "numero", "valor", "vencimento", "pago_em", "cpf", "_arquivo", "_carga_em")
-        .orderBy(F.col("numero").cast("int")))
+bronze = spark.table("main.credit.bronze_parcelas").filter(F.col("contrato_id") == str(CONTRACT))
+display(
+    bronze.select("parcela_id", "numero", "valor", "vencimento", "pago_em", "cpf", "_arquivo", "_carga_em").orderBy(
+        F.col("numero").cast("int")
+    )
+)
 display(bronze.groupBy("parcela_id").count().filter("count > 1"))
 
 # COMMAND ----------
@@ -103,7 +119,7 @@ display(bronze.groupBy("parcela_id").count().filter("count > 1"))
 
 # COMMAND ----------
 
-silver = table("silver_parcelas").filter(F.col("contrato_id") == CONTRACT)
+silver = spark.table("main.credit.silver_parcelas").filter(F.col("contrato_id") == CONTRACT)
 display(silver.orderBy("numero"))
 print(f"bronze: {bronze.count()} linhas · silver: {silver.count()} linhas")
 
@@ -115,7 +131,7 @@ print(f"bronze: {bronze.count()} linhas · silver: {silver.count()} linhas")
 
 # COMMAND ----------
 
-display(table("quarentena_parcelas").groupBy("regras_violadas").count())
+display(spark.table("main.credit.quarentena_parcelas").groupBy("regras_violadas").count())
 
 # COMMAND ----------
 
@@ -127,10 +143,17 @@ display(table("quarentena_parcelas").groupBy("regras_violadas").count())
 
 # COMMAND ----------
 
-display(table("bronze_contratos_cdc").filter(F.col("contrato_id") == CONTRACT)
-        .select("status", "operacao", "evento_em", "recebido_em").orderBy("recebido_em"))
-display(table("silver_contratos").filter(F.col("contrato_id") == CONTRACT)
-        .select("contrato_id", "status", "produto", "valor", "prazo_meses", "data_concessao"))
+display(
+    spark.table("main.credit.bronze_contratos_cdc")
+    .filter(F.col("contrato_id") == CONTRACT)
+    .select("status", "operacao", "evento_em", "recebido_em")
+    .orderBy("recebido_em")
+)
+display(
+    spark.table("main.credit.silver_contratos")
+    .filter(F.col("contrato_id") == CONTRACT)
+    .select("contrato_id", "status", "produto", "valor", "prazo_meses", "data_concessao")
+)
 
 # COMMAND ----------
 
@@ -141,8 +164,12 @@ display(table("silver_contratos").filter(F.col("contrato_id") == CONTRACT)
 
 # COMMAND ----------
 
-display(table("silver_renda").filter(F.col("cliente_id") == CUSTOMER)
-        .select("cliente_id", "renda_mensal", "__START_AT", "__END_AT").orderBy("__START_AT"))
+display(
+    spark.table("main.credit.silver_renda")
+    .filter(F.col("cliente_id") == CUSTOMER)
+    .select("cliente_id", "renda_mensal", "__START_AT", "__END_AT")
+    .orderBy("__START_AT")
+)
 
 # COMMAND ----------
 
@@ -153,9 +180,13 @@ display(table("silver_renda").filter(F.col("cliente_id") == CUSTOMER)
 
 # COMMAND ----------
 
-display(table("dim_cliente").filter(F.col("cliente_id") == CUSTOMER))
-display(table("fato_parcelas").filter(F.col("contrato_id") == CONTRACT)
-        .select("parcela_id", "numero", "data_vencimento", "valor", "pago_em", "dias_atraso", "atraso_90").orderBy("numero"))
+display(spark.table("main.credit.dim_cliente").filter(F.col("cliente_id") == CUSTOMER))
+display(
+    spark.table("main.credit.fato_parcelas")
+    .filter(F.col("contrato_id") == CONTRACT)
+    .select("parcela_id", "numero", "data_vencimento", "valor", "pago_em", "dias_atraso", "atraso_90")
+    .orderBy("numero")
+)
 
 # COMMAND ----------
 
@@ -167,12 +198,16 @@ display(table("fato_parcelas").filter(F.col("contrato_id") == CONTRACT)
 
 # COMMAND ----------
 
-abt_row = table("gold_abt_credito").filter(F.col("contrato_id") == CONTRACT)
+abt_row = spark.table("main.credit.gold_abt_credito").filter(F.col("contrato_id") == CONTRACT)
 display(abt_row)
 vintage = abt_row.select(F.date_format("data_ref", "yyyy-MM")).first()[0]
-display(table("gold_inadimplencia_safra").filter(F.col("safra") == vintage))
-print("renda na concessão (ABT):", abt_row.first()["renda_mensal"],
-      "· renda atual (dim_cliente):", table("dim_cliente").filter(F.col("cliente_id") == CUSTOMER).first()["renda_mensal"])
+display(spark.table("main.credit.gold_inadimplencia_safra").filter(F.col("safra") == vintage))
+print(
+    "renda na concessão (ABT):",
+    abt_row.first()["renda_mensal"],
+    "· renda atual (dim_cliente):",
+    spark.table("main.credit.dim_cliente").filter(F.col("cliente_id") == CUSTOMER).first()["renda_mensal"],
+)
 
 # COMMAND ----------
 

@@ -1,5 +1,3 @@
-# Onde os dados moram, e o anomaly detection do Databricks sobre todas as tabelas do schema:
-# a gold está em dia (freshness) e completa (completeness)?
 resources:
   schemas:
     credit:

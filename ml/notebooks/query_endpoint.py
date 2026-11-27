@@ -29,12 +29,12 @@ from mlflow.deployments import get_deploy_client
 from credit_score.features import INPUT_COLUMNS
 from credit_score.service import CALL_LOG_SCHEMA, build_request, call_record, status_code_of
 
-ENDPOINT = "credit-score"   # resources/serving.py
+ENDPOINT = "credit-score"
 CALL_LOG = "main.credit_ml.chamadas_endpoint"
 client = get_deploy_client("databricks")
 customers = spark.table("main.credit_ml.features_cliente")
 served_version = WorkspaceClient().serving_endpoints.get(ENDPOINT).config.served_entities[0].entity_version
-calls = []   # registros das chamadas, gravados em CALL_LOG no fim
+calls = []
 
 
 def customer_history(customer_id: int) -> dict:
@@ -48,14 +48,29 @@ def request_score(row: dict):
     try:
         out = client.predict(endpoint=ENDPOINT, inputs={"dataframe_records": [row]})
     except Exception as error:
-        calls.append(call_record(row, request_time=started, status_code=status_code_of(error),
-                                 latency_ms=(time.perf_counter() - start) * 1000, model_version=served_version,
-                                 error=str(error)[-500:]))
+        calls.append(
+            call_record(
+                row,
+                request_time=started,
+                status_code=status_code_of(error),
+                latency_ms=(time.perf_counter() - start) * 1000,
+                model_version=served_version,
+                error=str(error)[-500:],
+            )
+        )
         raise
-    calls.append(call_record(row, request_time=started, status_code=200,
-                             latency_ms=(time.perf_counter() - start) * 1000, model_version=served_version,
-                             prediction=out["predictions"][0]))
+    calls.append(
+        call_record(
+            row,
+            request_time=started,
+            status_code=200,
+            latency_ms=(time.perf_counter() - start) * 1000,
+            model_version=served_version,
+            prediction=out["predictions"][0],
+        )
+    )
     return out
+
 
 # COMMAND ----------
 
@@ -65,7 +80,9 @@ def request_score(row: dict):
 # COMMAND ----------
 
 customer_id = customers.select("cliente_id").first()[0]
-row = build_request(customer_history(customer_id), {"valor_solicitado": 15000.0, "prazo_meses": 24}, requests_last_24h=1)
+row = build_request(
+    customer_history(customer_id), {"valor_solicitado": 15000.0, "prazo_meses": 24}, requests_last_24h=1
+)
 print(request_score(row))
 
 # COMMAND ----------
@@ -106,8 +123,10 @@ for _, r in requests.iterrows():
         latencies.append((time.perf_counter() - start) * 1000)
     except Exception:
         rejected += 1
-print(f"p50 = {np.percentile(latencies, 50):.0f} ms · p95 = {np.percentile(latencies, 95):.0f} ms · "
-      f"{rejected} recusada(s) pelo contrato")
+print(
+    f"p50 = {np.percentile(latencies, 50):.0f} ms · p95 = {np.percentile(latencies, 95):.0f} ms · "
+    f"{rejected} recusada(s) pelo contrato"
+)
 
 # COMMAND ----------
 
@@ -117,6 +136,5 @@ print(f"p50 = {np.percentile(latencies, 50):.0f} ms · p95 = {np.percentile(late
 
 # COMMAND ----------
 
-(spark.createDataFrame(calls, schema=CALL_LOG_SCHEMA)
- .write.mode("append").saveAsTable(CALL_LOG))
+(spark.createDataFrame(calls, schema=CALL_LOG_SCHEMA).write.mode("append").saveAsTable(CALL_LOG))
 print(f"{len(calls)} chamadas registradas em {CALL_LOG}")

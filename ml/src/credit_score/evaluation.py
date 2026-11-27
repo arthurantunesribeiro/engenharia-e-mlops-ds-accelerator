@@ -1,4 +1,5 @@
 """Janela de validação e relatório de um score: o mesmo no treino e no deployment job."""
+
 from __future__ import annotations
 
 import pandas as pd
@@ -6,7 +7,7 @@ import pandas as pd
 from credit_score.contract import validate_inputs
 from credit_score.model import TARGET, band_table, compute_metrics, metrics_by_segment
 
-MAX_OUT_OF_CONTRACT = 0.01   # acima disso a ABT tem defeito: o problema é o pipeline, não o modelo
+MAX_OUT_OF_CONTRACT = 0.01
 
 
 def split_in_time(abt: pd.DataFrame, valid_share: float = 0.25) -> tuple[pd.DataFrame, pd.DataFrame]:

@@ -1,5 +1,5 @@
-"""Testes do código do modelo. A qualidade do modelo (AUC global e por segmento) é validada no treino,
-sobre a ABT real: ver `src/training/train_register.py`."""
+"""Testes do código do modelo; a qualidade do modelo é validada no treino."""
+
 import math
 
 import pandas as pd
@@ -23,8 +23,10 @@ def test_risk_bands_are_ordered():
     assert [risk_band(p) for p in (0.01, 0.07, 0.15, 0.3, 0.9)] == list("ABCDE")
 
 
-@pytest.mark.parametrize("limit, below, at", [(limit, band, nxt) for (limit, band), (_, nxt)
-                                              in zip(RISK_BANDS, RISK_BANDS[1:])])
+@pytest.mark.parametrize(
+    "limit, below, at",
+    [(limit, band, nxt) for (limit, band), (_, nxt) in zip(RISK_BANDS, RISK_BANDS[1:], strict=False)],
+)
 def test_band_limit_is_exclusive(limit, below, at):
     assert risk_band(limit - 1e-9) == below
     assert risk_band(limit) == at
@@ -72,7 +74,7 @@ def test_band_table_uses_the_risk_bands():
 
 def test_split_in_time_drops_out_of_contract_and_validates_on_recent_rows(base):
     abt = base.copy()
-    abt.loc[abt.index[0], "uso_limite"] = 7.0   # fora do contrato
+    abt.loc[abt.index[0], "uso_limite"] = 7.0
     train_df, valid_df = split_in_time(abt)
     assert abt.index[0] not in train_df.index.union(valid_df.index)
     assert train_df["data_ref"].max() < valid_df["data_ref"].min()

@@ -1,6 +1,3 @@
-# Bundle do time de dados: da landing à gold. As tabelas gold são o produto publicado para o time de ML.
-#   databricks bundle deploy
-#   databricks bundle run source_simulation    simula os sistemas de origem; a ingestão dispara sozinha
 bundle:
   name: credit_data
   engine: direct

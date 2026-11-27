@@ -18,7 +18,7 @@ from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import NotFound
 from databricks.sdk.service.serving import ServedEntityInput
 
-ENDPOINT = "credit-score"   # resources/serving.py
+ENDPOINT = "credit-score"
 model_name = dbutils.widgets.get("model_name")
 model_version = dbutils.widgets.get("model_version")
 
@@ -37,11 +37,12 @@ try:
 except NotFound:
     config = None
 
-if config is None:   # primeira versão: o próximo bundle deploy cria o endpoint com o champion
+if config is None:
     print(f"{ENDPOINT} ainda não existe: rode o ml-cd para criá-lo com a v{model_version}")
 else:
-    entities = [ServedEntityInput.from_dict({**e.as_dict(), "entity_version": str(model_version)})
-                for e in config.served_entities]
-    w.serving_endpoints.update_config_and_wait(ENDPOINT, served_entities=entities,
-                                               traffic_config=config.traffic_config)
+    entities = [
+        ServedEntityInput.from_dict({**e.as_dict(), "entity_version": str(model_version)})
+        for e in config.served_entities
+    ]
+    w.serving_endpoints.update_config_and_wait(ENDPOINT, served_entities=entities, traffic_config=config.traffic_config)
     print(f"{ENDPOINT} servindo v{model_version}")

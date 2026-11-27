@@ -21,7 +21,7 @@
 import numpy as np
 import pandas as pd
 
-LANDING = "/Volumes/main/credit/landing"   # volume declarado em resources/foundation.yml
+LANDING = "/Volumes/main/credit/landing"
 rng = np.random.default_rng(42)
 START, END = pd.Timestamp("2024-01-01"), pd.Timestamp("2025-12-31")
 DAYS = (END - START).days
@@ -37,24 +37,39 @@ N_CUSTOMERS, N_CONTRACTS = 3000, 6000
 segment = rng.choice(["varejo", "alta_renda", "consignado"], N_CUSTOMERS, p=[0.6, 0.15, 0.25])
 base_income = np.where(segment == "alta_renda", 15000, np.where(segment == "consignado", 4500, 3500))
 income0 = np.round(rng.lognormal(np.log(base_income), 0.45), 2)
-hidden_risk = rng.gamma(1.0, 1.0, N_CUSTOMERS) * np.where(segment == "varejo", 1.3, 0.8)   # o "mundo real" escondido
+hidden_risk = rng.gamma(1.0, 1.0, N_CUSTOMERS) * np.where(segment == "varejo", 1.3, 0.8)
 
-customers = pd.DataFrame({
-    "cliente_id": np.arange(1, N_CUSTOMERS + 1),
-    "cpf": [f"{a:03d}.{b:03d}.{c:03d}-{d % 100:02d}" for a, b, c, d in rng.integers(0, 1000, (N_CUSTOMERS, 4))],
-    "segmento": segment,
-    "canal": rng.choice(["app", "agencia", "correspondente"], N_CUSTOMERS, p=[0.55, 0.25, 0.20]),
-    "cadastrado_em": START - pd.to_timedelta(rng.integers(30, 720, N_CUSTOMERS), unit="D"),
-})
+customers = pd.DataFrame(
+    {
+        "cliente_id": np.arange(1, N_CUSTOMERS + 1),
+        "cpf": [f"{a:03d}.{b:03d}.{c:03d}-{d % 100:02d}" for a, b, c, d in rng.integers(0, 1000, (N_CUSTOMERS, 4))],
+        "segmento": segment,
+        "canal": rng.choice(["app", "agencia", "correspondente"], N_CUSTOMERS, p=[0.55, 0.25, 0.20]),
+        "cadastrado_em": START - pd.to_timedelta(rng.integers(30, 720, N_CUSTOMERS), unit="D"),
+    }
+)
 
 # renda: a do cadastro e, para 35% dos clientes, uma revisão depois
 revised = rng.random(N_CUSTOMERS) < 0.35
-income = pd.concat([
-    pd.DataFrame({"cliente_id": customers["cliente_id"], "renda_mensal": income0, "atualizado_em": customers["cadastrado_em"]}),
-    pd.DataFrame({"cliente_id": customers.loc[revised, "cliente_id"].values,
-                  "renda_mensal": np.round(income0[revised] * rng.uniform(0.6, 1.6, revised.sum()), 2),
-                  "atualizado_em": START + pd.to_timedelta(rng.integers(0, DAYS, revised.sum()), unit="D")}),
-], ignore_index=True)
+income = pd.concat(
+    [
+        pd.DataFrame(
+            {
+                "cliente_id": customers["cliente_id"],
+                "renda_mensal": income0,
+                "atualizado_em": customers["cadastrado_em"],
+            }
+        ),
+        pd.DataFrame(
+            {
+                "cliente_id": customers.loc[revised, "cliente_id"].values,
+                "renda_mensal": np.round(income0[revised] * rng.uniform(0.6, 1.6, revised.sum()), 2),
+                "atualizado_em": START + pd.to_timedelta(rng.integers(0, DAYS, revised.sum()), unit="D"),
+            }
+        ),
+    ],
+    ignore_index=True,
+)
 
 # propostas aprovadas: cada uma vira um contrato e guarda o que se sabia no momento do pedido
 cust = rng.integers(1, N_CUSTOMERS + 1, N_CONTRACTS)
@@ -64,15 +79,30 @@ term = rng.choice([6, 12, 18, 24], N_CONTRACTS)
 limit_usage = np.round(np.clip(rng.beta(2, 3, N_CONTRACTS) + 0.08 * hidden_risk[cust - 1], 0, 1), 3)
 bureau_queries = rng.poisson(1.0 + hidden_risk[cust - 1])
 recent_requests = 1 + rng.poisson(0.4 * hidden_risk[cust - 1])
-proposals = pd.DataFrame({"contrato_id": np.arange(1, N_CONTRACTS + 1), "cliente_id": cust,
-                          "pedido_em": granted - pd.to_timedelta(rng.integers(30, 600, N_CONTRACTS), unit="m"),
-                          "valor_solicitado": amount, "prazo_meses": term, "uso_limite": limit_usage,
-                          "consultas_bureau_90d": bureau_queries, "pedidos_ultimas_24h": recent_requests})
+proposals = pd.DataFrame(
+    {
+        "contrato_id": np.arange(1, N_CONTRACTS + 1),
+        "cliente_id": cust,
+        "pedido_em": granted - pd.to_timedelta(rng.integers(30, 600, N_CONTRACTS), unit="m"),
+        "valor_solicitado": amount,
+        "prazo_meses": term,
+        "uso_limite": limit_usage,
+        "consultas_bureau_90d": bureau_queries,
+        "pedidos_ultimas_24h": recent_requests,
+    }
+)
 
 # quem vai deixar de pagar: o alvo que o modelo tenta prever
 burden = np.clip((amount / term) / income0[cust - 1], 0, 3)
-logit = (-5.6 + 2.2 * burden + 1.2 * limit_usage + 0.25 * bureau_queries + 0.4 * recent_requests
-         + 0.6 * hidden_risk[cust - 1] - 0.6 * (segment[cust - 1] == "consignado"))
+logit = (
+    -5.6
+    + 2.2 * burden
+    + 1.2 * limit_usage
+    + 0.25 * bureau_queries
+    + 0.4 * recent_requests
+    + 0.6 * hidden_risk[cust - 1]
+    - 0.6 * (segment[cust - 1] == "consignado")
+)
 defaults = rng.random(N_CONTRACTS) < 1 / (1 + np.exp(-logit))
 
 # COMMAND ----------
@@ -82,22 +112,46 @@ defaults = rng.random(N_CONTRACTS) < 1 / (1 + np.exp(-logit))
 
 # COMMAND ----------
 
-product = np.array([{"varejo": "pessoal", "alta_renda": "cartao", "consignado": "consignado"}[s] for s in segment[cust - 1]])
-contracts = pd.DataFrame({"contrato_id": proposals["contrato_id"], "cliente_id": cust, "produto": product,
-                          "valor": amount, "prazo_meses": term, "data_concessao": granted})
+product = np.array(
+    [{"varejo": "pessoal", "alta_renda": "cartao", "consignado": "consignado"}[s] for s in segment[cust - 1]]
+)
+contracts = pd.DataFrame(
+    {
+        "contrato_id": proposals["contrato_id"],
+        "cliente_id": cust,
+        "produto": product,
+        "valor": amount,
+        "prazo_meses": term,
+        "data_concessao": granted,
+    }
+)
 late = contracts[defaults]
 renegotiated = late.sample(frac=0.3, random_state=1)
 cancelled = contracts[~defaults].sample(n=15, random_state=1)
-cdc = pd.concat([
-    contracts.assign(status="em_dia", operacao="INSERT", evento_em=contracts["data_concessao"] + pd.Timedelta(hours=10)),
-    late.assign(status="em_atraso", operacao="UPDATE",
-                evento_em=late["data_concessao"] + pd.to_timedelta(rng.integers(60, 200, len(late)), unit="D")),
-    renegotiated.assign(status="renegociado", operacao="UPDATE",
-                        evento_em=renegotiated["data_concessao"] + pd.to_timedelta(rng.integers(220, 300, len(renegotiated)), unit="D")),
-    cancelled.assign(status="cancelado", operacao="DELETE", evento_em=cancelled["data_concessao"] + pd.Timedelta(days=2)),
-], ignore_index=True)
+cdc = pd.concat(
+    [
+        contracts.assign(
+            status="em_dia", operacao="INSERT", evento_em=contracts["data_concessao"] + pd.Timedelta(hours=10)
+        ),
+        late.assign(
+            status="em_atraso",
+            operacao="UPDATE",
+            evento_em=late["data_concessao"] + pd.to_timedelta(rng.integers(60, 200, len(late)), unit="D"),
+        ),
+        renegotiated.assign(
+            status="renegociado",
+            operacao="UPDATE",
+            evento_em=renegotiated["data_concessao"]
+            + pd.to_timedelta(rng.integers(220, 300, len(renegotiated)), unit="D"),
+        ),
+        cancelled.assign(
+            status="cancelado", operacao="DELETE", evento_em=cancelled["data_concessao"] + pd.Timedelta(days=2)
+        ),
+    ],
+    ignore_index=True,
+)
 cdc["recebido_em"] = cdc["evento_em"] + pd.to_timedelta(rng.integers(1, 120, len(cdc)), unit="m")
-out_of_order = cdc[cdc["status"] == "em_atraso"].sample(frac=0.05, random_state=1).index   # chegam 150 dias depois
+out_of_order = cdc[cdc["status"] == "em_atraso"].sample(frac=0.05, random_state=1).index
 cdc.loc[out_of_order, "recebido_em"] += pd.Timedelta(days=150)
 cdc = cdc[cdc["evento_em"] <= END]
 
@@ -109,24 +163,38 @@ cdc = cdc[cdc["evento_em"] <= END]
 # COMMAND ----------
 
 rows = []
-for contract_id, is_default, months, grant_date, value in zip(contracts["contrato_id"], defaults, term, granted, amount):
+for contract_id, is_default, months, grant_date, value in zip(
+    contracts["contrato_id"], defaults, term, granted, amount, strict=True
+):
     stops_paying = rng.integers(1, 7) if is_default else 999
     for k in range(1, months + 1):
         due = grant_date + pd.DateOffset(months=k)
         if due > END:
             break
-        paid = pd.NaT if k >= stops_paying else due + pd.Timedelta(days=int(max(0, rng.normal(2, 6) + 15 * is_default * rng.random())))
-        rows.append((contract_id, k, due, round(value / months, 2), paid if paid is not pd.NaT and paid <= END else pd.NaT))
+        paid = (
+            pd.NaT
+            if k >= stops_paying
+            else due + pd.Timedelta(days=int(max(0, rng.normal(2, 6) + 15 * is_default * rng.random())))
+        )
+        rows.append(
+            (contract_id, k, due, round(value / months, 2), paid if paid is not pd.NaT and paid <= END else pd.NaT)
+        )
 installments = pd.DataFrame(rows, columns=["contrato_id", "numero", "vencimento", "valor", "pago_em"])
 installments.insert(0, "parcela_id", np.arange(1, len(installments) + 1))
-installments["cpf"] = customers.set_index("cliente_id").loc[
-    contracts.set_index("contrato_id").loc[installments["contrato_id"], "cliente_id"], "cpf"].values
+installments["cpf"] = (
+    customers.set_index("cliente_id")
+    .loc[contracts.set_index("contrato_id").loc[installments["contrato_id"], "cliente_id"], "cpf"]
+    .values
+)
 
-brazilian = rng.random(len(installments)) < 0.5                       # metade no formato brasileiro
-installments["valor"] = [("R$ " + f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")) if b else f"{v:.2f}"
-                         for v, b in zip(installments["valor"], brazilian)]
-installments["vencimento"] = np.where(brazilian, installments["vencimento"].dt.strftime("%d/%m/%Y"),
-                                      installments["vencimento"].dt.strftime("%Y-%m-%d"))
+brazilian = rng.random(len(installments)) < 0.5
+installments["valor"] = [
+    ("R$ " + f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")) if b else f"{v:.2f}"
+    for v, b in zip(installments["valor"], brazilian, strict=True)
+]
+installments["vencimento"] = np.where(
+    brazilian, installments["vencimento"].dt.strftime("%d/%m/%Y"), installments["vencimento"].dt.strftime("%Y-%m-%d")
+)
 installments["pago_em"] = installments["pago_em"].dt.strftime("%Y-%m-%d")
 orphans = installments.sample(n=20, random_state=2).assign(contrato_id=None)
 orphans["parcela_id"] = np.arange(len(installments) + 1, len(installments) + 21)
@@ -145,16 +213,20 @@ installments = installments.astype({"contrato_id": "Int64"}).astype(str).replace
 
 N_PENDING = 5000
 pending_cust = rng.integers(1, N_CUSTOMERS + 1, N_PENDING)
-pending = pd.DataFrame({
-    "contrato_id": np.arange(N_CONTRACTS + 1, N_CONTRACTS + N_PENDING + 1),   # número reservado; sem contrato ainda
-    "cliente_id": pending_cust,
-    "pedido_em": pd.Timestamp("2026-01-01") + pd.to_timedelta(rng.integers(0, 90 * 24 * 60, N_PENDING), unit="m"),
-    "valor_solicitado": np.round(income0[pending_cust - 1] * rng.uniform(1.5, 10, N_PENDING), 2),
-    "prazo_meses": rng.choice([6, 12, 18, 24], N_PENDING),
-    "uso_limite": np.round(np.clip(rng.beta(2, 3, N_PENDING) + 0.08 * hidden_risk[pending_cust - 1] + 0.25, 0, 1), 3),
-    "consultas_bureau_90d": rng.poisson(2 * (1.0 + hidden_risk[pending_cust - 1])),
-    "pedidos_ultimas_24h": 1 + rng.poisson(0.4 * hidden_risk[pending_cust - 1]),
-})
+pending = pd.DataFrame(
+    {
+        "contrato_id": np.arange(N_CONTRACTS + 1, N_CONTRACTS + N_PENDING + 1),
+        "cliente_id": pending_cust,
+        "pedido_em": pd.Timestamp("2026-01-01") + pd.to_timedelta(rng.integers(0, 90 * 24 * 60, N_PENDING), unit="m"),
+        "valor_solicitado": np.round(income0[pending_cust - 1] * rng.uniform(1.5, 10, N_PENDING), 2),
+        "prazo_meses": rng.choice([6, 12, 18, 24], N_PENDING),
+        "uso_limite": np.round(
+            np.clip(rng.beta(2, 3, N_PENDING) + 0.08 * hidden_risk[pending_cust - 1] + 0.25, 0, 1), 3
+        ),
+        "consultas_bureau_90d": rng.poisson(2 * (1.0 + hidden_risk[pending_cust - 1])),
+        "pedidos_ultimas_24h": 1 + rng.poisson(0.4 * hidden_risk[pending_cust - 1]),
+    }
+)
 for column, dirty_value in {"prazo_meses": 0, "valor_solicitado": -1500.0, "uso_limite": 87.0}.items():
     pending.loc[rng.choice(pending.index, 25, replace=False), column] = dirty_value
 

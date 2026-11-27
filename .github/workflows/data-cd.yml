@@ -1,10 +1,9 @@
-# Time de dados: publica o bundle data/ a cada push na main que muda algo em data/.
 name: data-cd
 
 on:
   push:
     branches: [main]
-    paths: ["data/**", ".github/workflows/data-cd.yml"]
+    paths: ["data/**", "ruff.toml", ".github/workflows/data-cd.yml"]
   workflow_dispatch:
 
 concurrency: data-cd
@@ -20,5 +19,6 @@ jobs:
       DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - uses: databricks/setup-cli@v1.24.0   # a mesma versão do bundle de ML
+      - run: pipx run ruff==0.17.6 format --check . && pipx run ruff==0.17.6 check .
+      - uses: databricks/setup-cli@v1.24.0
       - run: databricks bundle deploy

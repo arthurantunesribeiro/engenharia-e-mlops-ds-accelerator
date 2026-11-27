@@ -15,13 +15,14 @@
 
 import mlflow
 
-APPROVAL_TAG = "approval"   # = task_key em resources/deployment.yml
+APPROVAL_TAG = "approval"
 model_name = dbutils.widgets.get("model_name")
 model_version = dbutils.widgets.get("model_version")
 
 mlflow.set_registry_uri("databricks-uc")
 tags = mlflow.MlflowClient().get_model_version(model_name, model_version).tags
 if tags.get(APPROVAL_TAG) != "Approved":
-    raise Exception(f"{model_name} v{model_version} aguardando aprovação: compare na UI e clique em Approve "
-                    "na página da versão")
+    raise Exception(
+        f"{model_name} v{model_version} aguardando aprovação: compare na UI e clique em Approve na página da versão"
+    )
 print(f"v{model_version} aprovada")

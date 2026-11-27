@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
-
 from conftest import proposal
+
 from credit_score.features import FEATURES, build_features
 
 

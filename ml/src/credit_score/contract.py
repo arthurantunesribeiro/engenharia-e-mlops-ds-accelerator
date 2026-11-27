@@ -1,9 +1,5 @@
-"""Contrato de entrada: as regras de domínio, escritas uma vez e aplicadas em todos os caminhos.
+"""Contrato de entrada: regras de domínio aplicadas no treino, no batch e no endpoint."""
 
-A assinatura do MLflow confere nomes e tipos das colunas. Faixas e valores aceitos ficam aqui:
-`validate_inputs` aplica no endpoint (dentro do modelo) e `contract_sql_rules` no scoring batch.
-Toda coluna é obrigatória (não nula).
-"""
 from __future__ import annotations
 
 import pandas as pd
@@ -11,14 +7,14 @@ import pandas as pd
 SEGMENTS = ["varejo", "alta_renda", "consignado"]
 
 INPUT_CONTRACT = {
-    "renda_mensal":         {"gt": 0},
-    "valor_solicitado":     {"gt": 0},
-    "prazo_meses":          {"between": (1, 120)},
-    "uso_limite":           {"between": (0, 1)},
-    "atraso_medio_12m":     {"min": 0},
+    "renda_mensal": {"gt": 0},
+    "valor_solicitado": {"gt": 0},
+    "prazo_meses": {"between": (1, 120)},
+    "uso_limite": {"between": (0, 1)},
+    "atraso_medio_12m": {"min": 0},
     "consultas_bureau_90d": {"min": 0},
-    "pedidos_ultimas_24h":  {"min": 0},
-    "segmento":             {"values": SEGMENTS},
+    "pedidos_ultimas_24h": {"min": 0},
+    "segmento": {"values": SEGMENTS},
 }
 
 
