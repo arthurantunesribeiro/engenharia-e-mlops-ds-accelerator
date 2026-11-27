@@ -19,7 +19,8 @@ jobs:
     defaults: {run: {working-directory: ml}}
     env:
       DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
     steps:
       - uses: actions/checkout@v4
         with: {ref: "${{ github.event.workflow_run.head_sha || github.sha }}"}   # exatamente o commit testado
