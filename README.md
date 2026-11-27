@@ -64,13 +64,15 @@ credit-score-mlops/
 │   │   ├── inference_profile.py        #     data profiling da tabela de inferência
 │   │   ├── model_alerts.py             #     SQL alerts de drift e de entrada fora do contrato
 │   │   ├── notifications.py            #     lê os destinatários do secret scope; e-mail de falha nos jobs
-│   │   └── alerts/                     #     as consultas dos alertas (.sql)
+│   │   ├── alerts/                     #     as consultas dos alertas (.sql)
+│   │   └── dashboard.yml               #     dashboard do modelo (dashboards/monitoramento.lvdash.json)
 │   ├── src/                            #   scripts dos jobs (spark_python_task) e o pacote
 │   │   ├── credit_score/               #     pacote de produção (wheel nos jobs; dentro do modelo registrado)
 │   │   ├── features/build_features.py  #     gold → features_cliente
 │   │   ├── training/train_register.py
 │   │   ├── scoring/batch_scoring.py
 │   │   └── monitoring/                 #     build_inference_log.py, monitor_model.py
+│   ├── dashboards/                     #   monitoramento.lvdash.json: o dashboard do modelo, em português
 │   ├── scripts/connect_deployment_job.py #   liga o deployment job ao modelo (roda no ml-cd)
 │   ├── notebooks/                      #   query_endpoint, explore_scores
 │   │   └── deployment/                 #     evaluation, approval, deploy (tarefas do deployment job)
@@ -306,7 +308,13 @@ em todos os caminhos, sem depender do ciclo do time de dados.
      (`chamadas_endpoint`, já com a versão do modelo) e o scoring batch em `credit_score_inference_log`.
    - **Data profiling** (`resources/inference_profile.py`): perfil de inferência sobre essa tabela,
      com a baseline gravada pelo treino; calcula PSI, KS e qui-quadrado por coluna, por dia, versão
-     do modelo e segmento, e gera um painel.
+     do modelo e segmento, e gera um painel padrão (em inglês). Nele, os filtros padrão escondem a
+     janela do dia até ela fechar e procuram o modelo `*`: para ver os dados do dia, ponha *Time Window
+     End* no futuro e escolha a versão em *Model Id*.
+   - **Dashboard do modelo** (`resources/dashboard.yml`, *Dashboards* › `credit_score · monitoramento do
+     modelo`), em português: versão em produção, maior PSI e quantas colunas passaram de 0,2, a tabela
+     de PSI por coluna e segmento, o PSI ao longo do tempo, as faixas A–E no treino e em produção, as
+     chamadas, a latência e a quarentena por regra. Usa a janela mais recente, mesmo aberta.
    - `src/monitoring/monitor_model.py`: pede o refresh do perfil, roda as consultas dos alertas e, se
      algum limite foi ultrapassado, posta no Google Chat.
    - **SQL alerts** (`resources/model_alerts.py`), como a documentação do data profiling recomenda:

@@ -1,0 +1,844 @@
+{
+  "datasets": [
+    {
+      "name": "resumo",
+      "displayName": "Resumo",
+      "queryLines": [
+        "WITH ultima AS (SELECT max(window.start) AS inicio FROM main.credit_ml.credit_score_inference_log_drift_metrics WHERE drift_type = 'BASELINE'),\n",
+        "psi AS (\n",
+        "  SELECT population_stability_index AS psi FROM main.credit_ml.credit_score_inference_log_drift_metrics\n",
+        "  WHERE drift_type = 'BASELINE' AND population_stability_index IS NOT NULL AND window.start = (SELECT inicio FROM ultima)\n",
+        ")\n",
+        "SELECT\n",
+        "  (SELECT max_by(versao_modelo, request_time) FROM main.credit_ml.credit_score_inference_log) AS versao_em_producao,\n",
+        "  (SELECT count(*) FROM main.credit_ml.credit_score_inference_log WHERE request_time >= current_timestamp() - INTERVAL 30 DAYS) AS predicoes_30_dias,\n",
+        "  (SELECT round(max(psi), 2) FROM psi) AS maior_psi,\n",
+        "  (SELECT count_if(psi > 0.2) FROM psi) AS acima_de_0_2,\n",
+        "  (SELECT round(100 * avg(CASE WHEN status_code = 400 THEN 1.0 ELSE 0.0 END), 2) FROM main.credit_ml.chamadas_endpoint\n",
+        "   WHERE request_time >= current_timestamp() - INTERVAL 7 DAYS) AS recusas_endpoint_pct\n"
+      ]
+    },
+    {
+      "name": "psi_atual",
+      "displayName": "PSI na janela mais recente",
+      "queryLines": [
+        "WITH ultima AS (SELECT max(window.start) AS inicio FROM main.credit_ml.credit_score_inference_log_drift_metrics WHERE drift_type = 'BASELINE')\n",
+        "SELECT column_name AS coluna, coalesce(slice_value, 'base inteira') AS segmento,\n",
+        "       round(population_stability_index, 3) AS psi,\n",
+        "       CASE WHEN population_stability_index < 0.1 THEN 'estável'\n",
+        "            WHEN population_stability_index < 0.2 THEN 'atenção' ELSE 'investigar' END AS situacao\n",
+        "FROM main.credit_ml.credit_score_inference_log_drift_metrics\n",
+        "WHERE drift_type = 'BASELINE' AND population_stability_index IS NOT NULL\n",
+        "  AND window.start = (SELECT inicio FROM ultima) AND (slice_key IS NULL OR slice_key = 'segmento')\n",
+        "ORDER BY psi DESC\n"
+      ]
+    },
+    {
+      "name": "psi_historico",
+      "displayName": "PSI ao longo do tempo",
+      "queryLines": [
+        "SELECT window.start AS dia, column_name AS coluna, round(population_stability_index, 3) AS psi\n",
+        "FROM main.credit_ml.credit_score_inference_log_drift_metrics\n",
+        "WHERE drift_type = 'BASELINE' AND slice_key IS NULL AND population_stability_index IS NOT NULL\n"
+      ]
+    },
+    {
+      "name": "faixas",
+      "displayName": "Faixas: treino x produção",
+      "queryLines": [
+        "WITH treino AS (\n",
+        "  SELECT faixa, count(*) AS n FROM main.credit_ml.credit_score_baseline\n",
+        "  WHERE versao_modelo = (SELECT max_by(versao_modelo, request_time) FROM main.credit_ml.credit_score_inference_log) GROUP BY faixa\n",
+        "),\n",
+        "producao AS (\n",
+        "  SELECT faixa, count(*) AS n FROM main.credit_ml.credit_score_inference_log WHERE request_time >= current_timestamp() - INTERVAL 30 DAYS GROUP BY faixa\n",
+        ")\n",
+        "SELECT faixa,\n",
+        "       round(100 * t.n / (SELECT sum(n) FROM treino), 1) AS treino_pct,\n",
+        "       round(100 * p.n / (SELECT sum(n) FROM producao), 1) AS producao_pct\n",
+        "FROM treino t FULL OUTER JOIN producao p USING (faixa)\n",
+        "ORDER BY faixa\n"
+      ]
+    },
+    {
+      "name": "chamadas",
+      "displayName": "Chamadas ao endpoint",
+      "queryLines": [
+        "SELECT date_trunc('HOUR', request_time) AS hora, count(*) AS chamadas,\n",
+        "       count_if(status_code = 400) AS recusadas,\n",
+        "       round(percentile(latencia_ms, 0.5)) AS p50_ms, round(percentile(latencia_ms, 0.95)) AS p95_ms\n",
+        "FROM main.credit_ml.chamadas_endpoint\n",
+        "WHERE request_time >= current_timestamp() - INTERVAL 30 DAYS\n",
+        "GROUP BY ALL\n"
+      ]
+    },
+    {
+      "name": "quarentena",
+      "displayName": "Quarentena por regra",
+      "queryLines": [
+        "SELECT regra, count(*) AS propostas\n",
+        "FROM (SELECT explode(falhas) AS regra FROM main.credit_ml.propostas_quarentena\n",
+        "      WHERE barrado_em = (SELECT max(barrado_em) FROM main.credit_ml.propostas_quarentena))\n",
+        "GROUP BY regra ORDER BY propostas DESC\n"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "monitoramento",
+      "displayName": "Monitoramento",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layout": [
+        {
+          "widget": {
+            "multilineTextboxSpec": {
+              "lines": [
+                "# credit_score · monitoramento do modelo\n",
+                "Drift contra a baseline do treino (data profiling) e qualidade da entrada. Os dados mudam a cada execução do job `credit_monitoring`; o drift usa a janela diária mais recente, mesmo antes de fechar.\n"
+              ]
+            },
+            "name": "w01"
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "resumo",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "versao_em_producao",
+                      "expression": "`versao_em_producao`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "versao_em_producao",
+                  "displayName": "Versão em produção"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Versão em produção",
+                "showDescription": true,
+                "description": "Última versão que pontuou"
+              }
+            },
+            "name": "w02"
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "resumo",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "predicoes_30_dias",
+                      "expression": "`predicoes_30_dias`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "predicoes_30_dias",
+                  "displayName": "Predições (30 dias)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Predições (30 dias)",
+                "showDescription": true,
+                "description": "Endpoint + batch"
+              }
+            },
+            "name": "w03"
+          },
+          "position": {
+            "x": 1,
+            "y": 2,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "resumo",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "maior_psi",
+                      "expression": "`maior_psi`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "maior_psi",
+                  "displayName": "Maior PSI"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Maior PSI",
+                "showDescription": true,
+                "description": "Janela mais recente; acima de 0,2: investigar"
+              }
+            },
+            "name": "w04"
+          },
+          "position": {
+            "x": 2,
+            "y": 2,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "resumo",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "acima_de_0_2",
+                      "expression": "`acima_de_0_2`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "acima_de_0_2",
+                  "displayName": "Colunas/segmentos acima de 0,2"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Colunas/segmentos acima de 0,2",
+                "showDescription": true,
+                "description": "PSI contra a baseline"
+              }
+            },
+            "name": "w05"
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 1,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "resumo",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "recusas_endpoint_pct",
+                      "expression": "`recusas_endpoint_pct`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "recusas_endpoint_pct",
+                  "displayName": "Recusas no endpoint (%)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Recusas no endpoint (%)",
+                "showDescription": true,
+                "description": "Fora do contrato, 7 dias; limite 2%"
+              }
+            },
+            "name": "w06"
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Drift\n",
+                "PSI de cada coluna contra a baseline do treino: abaixo de 0,1 estável, até 0,2 atenção, acima disso investigar.\n"
+              ]
+            },
+            "name": "w07"
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "psi_atual",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "coluna",
+                      "expression": "`coluna`"
+                    },
+                    {
+                      "name": "segmento",
+                      "expression": "`segmento`"
+                    },
+                    {
+                      "name": "psi",
+                      "expression": "`psi`"
+                    },
+                    {
+                      "name": "situacao",
+                      "expression": "`situacao`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "widgetType": "table",
+              "condensed": true,
+              "withRowNumber": false,
+              "itemsPerPage": 25,
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "coluna",
+                    "displayName": "Coluna",
+                    "title": "Coluna",
+                    "type": "string",
+                    "order": 0,
+                    "visible": true,
+                    "displayAs": "string",
+                    "alignContent": "left"
+                  },
+                  {
+                    "fieldName": "segmento",
+                    "displayName": "Segmento",
+                    "title": "Segmento",
+                    "type": "string",
+                    "order": 1,
+                    "visible": true,
+                    "displayAs": "string",
+                    "alignContent": "left"
+                  },
+                  {
+                    "fieldName": "psi",
+                    "displayName": "PSI",
+                    "title": "PSI",
+                    "type": "float",
+                    "order": 2,
+                    "visible": true,
+                    "displayAs": "number",
+                    "alignContent": "right"
+                  },
+                  {
+                    "fieldName": "situacao",
+                    "displayName": "Situação",
+                    "title": "Situação",
+                    "type": "string",
+                    "order": 3,
+                    "visible": true,
+                    "displayAs": "string",
+                    "alignContent": "left"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "PSI na janela mais recente",
+                "showDescription": true,
+                "description": "Por coluna e segmento, do maior para o menor"
+              }
+            },
+            "name": "w08"
+          },
+          "position": {
+            "x": 0,
+            "y": 7,
+            "width": 3,
+            "height": 9
+          }
+        },
+        {
+          "widget": {
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "psi_historico",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "dia",
+                      "expression": "`dia`"
+                    },
+                    {
+                      "name": "psi",
+                      "expression": "`psi`"
+                    },
+                    {
+                      "name": "coluna",
+                      "expression": "`coluna`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "dia",
+                  "displayName": "dia",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "psi",
+                  "displayName": "PSI",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "coluna",
+                  "displayName": "coluna",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "PSI ao longo do tempo",
+                "showDescription": true,
+                "description": "Base inteira, por coluna"
+              }
+            },
+            "name": "w09"
+          },
+          "position": {
+            "x": 3,
+            "y": 7,
+            "width": 3,
+            "height": 9
+          }
+        },
+        {
+          "widget": {
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Faixas de risco\n",
+                "Participação de cada faixa: na validação do treino (baseline) e nas predições dos últimos 30 dias. Uma mudança grande muda a aprovação.\n"
+              ]
+            },
+            "name": "w10"
+          },
+          "position": {
+            "x": 0,
+            "y": 16,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "faixas",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "faixa",
+                      "expression": "`faixa`"
+                    },
+                    {
+                      "name": "treino_pct",
+                      "expression": "`treino_pct`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "faixa",
+                  "displayName": "faixa",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "treino_pct",
+                  "displayName": "% das propostas",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Treino (baseline)"
+              }
+            },
+            "name": "w11"
+          },
+          "position": {
+            "x": 0,
+            "y": 18,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "faixas",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "faixa",
+                      "expression": "`faixa`"
+                    },
+                    {
+                      "name": "producao_pct",
+                      "expression": "`producao_pct`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "faixa",
+                  "displayName": "faixa",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "producao_pct",
+                  "displayName": "% das propostas",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Produção (30 dias)"
+              }
+            },
+            "name": "w12"
+          },
+          "position": {
+            "x": 3,
+            "y": 18,
+            "width": 3,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Entrada e endpoint\n",
+                "Chamadas registradas pelo serviço (`chamadas_endpoint`) e a quarentena do último lote do scoring batch.\n"
+              ]
+            },
+            "name": "w13"
+          },
+          "position": {
+            "x": 0,
+            "y": 24,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "chamadas",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "hora",
+                      "expression": "`hora`"
+                    },
+                    {
+                      "name": "chamadas",
+                      "expression": "`chamadas`"
+                    },
+                    {
+                      "name": "recusadas",
+                      "expression": "`recusadas`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "hora",
+                  "displayName": "hora",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fields": [
+                    {
+                      "fieldName": "chamadas",
+                      "displayName": "chamadas"
+                    },
+                    {
+                      "fieldName": "recusadas",
+                      "displayName": "recusadas"
+                    }
+                  ],
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "axis": {
+                    "title": "chamadas"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Chamadas por hora"
+              }
+            },
+            "name": "w14"
+          },
+          "position": {
+            "x": 0,
+            "y": 26,
+            "width": 2,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "chamadas",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "hora",
+                      "expression": "`hora`"
+                    },
+                    {
+                      "name": "p50_ms",
+                      "expression": "`p50_ms`"
+                    },
+                    {
+                      "name": "p95_ms",
+                      "expression": "`p95_ms`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "hora",
+                  "displayName": "hora",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fields": [
+                    {
+                      "fieldName": "p50_ms",
+                      "displayName": "p50_ms"
+                    },
+                    {
+                      "fieldName": "p95_ms",
+                      "displayName": "p95_ms"
+                    }
+                  ],
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "axis": {
+                    "title": "ms"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Latência (ms)",
+                "showDescription": true,
+                "description": "p50 e p95 por hora"
+              }
+            },
+            "name": "w15"
+          },
+          "position": {
+            "x": 2,
+            "y": 26,
+            "width": 2,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "quarentena",
+                  "disaggregated": true,
+                  "fields": [
+                    {
+                      "name": "regra",
+                      "expression": "`regra`"
+                    },
+                    {
+                      "name": "propostas",
+                      "expression": "`propostas`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "regra",
+                  "displayName": "regra",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "propostas",
+                  "displayName": "propostas",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Quarentena por regra",
+                "showDescription": true,
+                "description": "Último lote do batch"
+              }
+            },
+            "name": "w16"
+          },
+          "position": {
+            "x": 4,
+            "y": 26,
+            "width": 2,
+            "height": 6
+          }
+        }
+      ]
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    }
+  }
+}
