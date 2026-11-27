@@ -3,24 +3,24 @@
 CREATE OR REFRESH STREAMING TABLE bronze_parcelas
 COMMENT 'Parcelas exportadas pelo core bancário, tudo como texto'
 AS SELECT *, _metadata.file_path AS _arquivo, current_timestamp() AS _carga_em
-FROM STREAM read_files('/Volumes/main/credit/landing/parcelas', format => 'csv', header => true, inferSchema => false);
+FROM STREAM read_files('${landing}/parcelas', format => 'csv', header => true, inferSchema => false);
 
 CREATE OR REFRESH STREAMING TABLE bronze_contratos_cdc
 COMMENT 'Eventos de CDC dos contratos: INSERT, UPDATE e DELETE'
 AS SELECT *, _metadata.file_path AS _arquivo, current_timestamp() AS _carga_em
-FROM STREAM read_files('/Volumes/main/credit/landing/contratos_cdc', format => 'json',
+FROM STREAM read_files('${landing}/contratos_cdc', format => 'json',
   schema => 'contrato_id BIGINT, cliente_id BIGINT, produto STRING, valor DOUBLE, prazo_meses INT, data_concessao TIMESTAMP, status STRING, operacao STRING, evento_em TIMESTAMP, recebido_em TIMESTAMP');
 
 CREATE OR REFRESH STREAMING TABLE bronze_clientes
-AS SELECT * FROM STREAM read_files('/Volumes/main/credit/landing/clientes', format => 'json',
+AS SELECT * FROM STREAM read_files('${landing}/clientes', format => 'json',
   schema => 'cliente_id BIGINT, cpf STRING, segmento STRING, canal STRING, cadastrado_em TIMESTAMP');
 
 CREATE OR REFRESH STREAMING TABLE bronze_renda
-AS SELECT * FROM STREAM read_files('/Volumes/main/credit/landing/renda', format => 'json',
+AS SELECT * FROM STREAM read_files('${landing}/renda', format => 'json',
   schema => 'cliente_id BIGINT, renda_mensal DOUBLE, atualizado_em TIMESTAMP');
 
 CREATE OR REFRESH STREAMING TABLE bronze_propostas
-AS SELECT * FROM STREAM read_files('/Volumes/main/credit/landing/propostas', format => 'json',
+AS SELECT * FROM STREAM read_files('${landing}/propostas', format => 'json',
   schema => 'contrato_id BIGINT, cliente_id BIGINT, pedido_em TIMESTAMP, valor_solicitado DOUBLE, prazo_meses INT, uso_limite DOUBLE, consultas_bureau_90d INT, pedidos_ultimas_24h INT');
 
 

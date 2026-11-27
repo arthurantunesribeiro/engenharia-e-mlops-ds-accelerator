@@ -1,7 +1,7 @@
 resources:
   schemas:
     credit_ml:
-      catalog_name: main
+      catalog_name: ${var.catalog}
       name: credit_ml
       comment: "Features, scores, quarentena, monitoramento e o modelo"
       lifecycle: {prevent_destroy: true}
@@ -12,7 +12,7 @@ resources:
 
   registered_models:
     credit_score:
-      catalog_name: main
+      catalog_name: ${var.catalog}
       schema_name: ${resources.schemas.credit_ml.name}
       name: credit_score
       comment: "Score de inadimplência 90d: contrato de entrada, score, faixa e motivos"

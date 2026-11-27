@@ -5,17 +5,21 @@ import time
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.dataquality import Refresh, RefreshState
 
-INFERENCE_LOG = "main.credit_ml.credit_score_inference_log"
+from credit_score.settings import catalog_from_args
 
 
-def refresh_profile() -> None:
+def refresh_profile(catalog: str) -> None:
     """Pede o recálculo do perfil de inferência e espera terminar.
+
+    Args:
+        catalog: Catálogo do schema `credit_ml`.
 
     Raises:
         AssertionError: Se o refresh não terminar com sucesso.
     """
+    inference_log = f"{catalog}.credit_ml.credit_score_inference_log"
     w = WorkspaceClient()
-    table_id = w.tables.get(INFERENCE_LOG).table_id
+    table_id = w.tables.get(inference_log).table_id
     refresh = w.data_quality.create_refresh(
         object_type="table", object_id=table_id, refresh=Refresh(object_type="table", object_id=table_id)
     )
@@ -25,8 +29,8 @@ def refresh_profile() -> None:
     assert refresh.state == RefreshState.MONITOR_REFRESH_STATE_SUCCESS, (
         f"refresh do perfil: {refresh.state} {refresh.message}"
     )
-    print(f"perfil de {INFERENCE_LOG} recalculado")
+    print(f"perfil de {inference_log} recalculado")
 
 
 if __name__ == "__main__":
-    refresh_profile()
+    refresh_profile(catalog_from_args())

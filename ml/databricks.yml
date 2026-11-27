@@ -13,6 +13,9 @@ artifacts:
     dynamic_version: true
 
 variables:
+  catalog:
+    description: Catálogo do Unity Catalog onde ficam os schemas do projeto
+    default: workspace
   warehouse_id:
     description: SQL warehouse que roda os SQL alerts
     lookup: {warehouse: Serverless Starter Warehouse}

@@ -29,10 +29,10 @@ from credit_score.model import (
     train,
 )
 from credit_score.monitoring import profile_columns
+from credit_score.settings import catalog_from_args
 
-ABT_TABLE = "main.credit.gold_abt_credito"
-MODEL_NAME = "main.credit_ml.credit_score"
-BASELINE_TABLE = "main.credit_ml.credit_score_baseline"
+ABT_TABLE = "credit.gold_abt_credito"
+BASELINE_TABLE = "credit_ml.credit_score_baseline"
 MIN_AUC = 0.70
 MIN_SEGMENT_AUC = 0.60
 CANDIDATES = [
@@ -164,25 +164,29 @@ def validate_package(model_uri: str, example: pd.DataFrame) -> None:
     raise AssertionError("o pacote aceitou uma proposta fora do contrato: não registrar")
 
 
-def register(model_uri: str) -> str:
+def register(model_uri: str, model_name: str) -> str:
     """Registra com express deployment e marca a versão como `challenger`.
 
     Só o deployment job, depois da aprovação, move o `champion` (inclusive na primeira versão).
 
     Args:
         model_uri: URI do modelo validado.
+        model_name: Nome completo do modelo no Unity Catalog.
 
     Returns:
         Versão registrada.
     """
-    version = mlflow.register_model(model_uri, MODEL_NAME, env_pack="databricks_model_serving").version
-    mlflow.MlflowClient().set_registered_model_alias(MODEL_NAME, "challenger", version)
+    version = mlflow.register_model(model_uri, model_name, env_pack="databricks_model_serving").version
+    mlflow.MlflowClient().set_registered_model_alias(model_name, "challenger", version)
     return version
 
 
 def main() -> None:
     """Executa o treino de ponta a ponta."""
+    catalog = catalog_from_args()
+    model_name = f"{catalog}.credit_ml.credit_score"
     spark = SparkSession.builder.getOrCreate()
+    spark.sql(f"USE CATALOG {catalog}")
     mlflow.set_registry_uri("databricks-uc")
     user = spark.sql("SELECT current_user()").first()[0]
     mlflow.set_experiment(f"/Users/{user}/credit_score")
@@ -195,8 +199,8 @@ def main() -> None:
     example = valid_df[INPUT_COLUMNS].head(5)
     info = log_model(model, best["run_id"], example)
     validate_package(info.model_uri, example)
-    version = register(info.model_uri)
-    print(f"{MODEL_NAME} v{version} registrada como challenger: o deployment job avalia e aguarda aprovação")
+    version = register(info.model_uri, model_name)
+    print(f"{model_name} v{version} registrada como challenger: o deployment job avalia e aguarda aprovação")
 
     baseline = valid_df[INPUT_COLUMNS].join(model.score(valid_df[INPUT_COLUMNS])[["score", "faixa"]])
     (

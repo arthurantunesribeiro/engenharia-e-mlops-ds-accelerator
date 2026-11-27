@@ -4,7 +4,7 @@ resources:
       name: credit_features
       trigger:
         table_update:
-          table_names: [main.credit.gold_abt_credito]
+          table_names: ["${var.catalog}.credit.gold_abt_credito"]
           wait_after_last_change_seconds: 300
       environments:
         - environment_key: default
@@ -12,4 +12,4 @@ resources:
       tasks:
         - task_key: build_features
           environment_key: default
-          spark_python_task: {python_file: ../src/features/build_features.py}
+          spark_python_task: {python_file: ../src/features/build_features.py, parameters: [--catalog, "${var.catalog}"]}

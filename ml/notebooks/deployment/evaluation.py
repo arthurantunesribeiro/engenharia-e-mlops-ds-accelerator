@@ -20,9 +20,9 @@ import mlflow
 from credit_score.evaluation import score_report, split_in_time
 from credit_score.features import INPUT_COLUMNS
 
-ABT_TABLE = "main.credit.gold_abt_credito"
 model_name = dbutils.widgets.get("model_name")
 model_version = dbutils.widgets.get("model_version")
+spark.sql(f"USE CATALOG {model_name.split('.')[0]}")
 
 mlflow.set_registry_uri("databricks-uc")
 client = mlflow.MlflowClient()
@@ -37,7 +37,7 @@ try:
 except mlflow.exceptions.MlflowException:
     pass
 
-_, valid = split_in_time(spark.table(ABT_TABLE).toPandas())
+_, valid = split_in_time(spark.table("credit.gold_abt_credito").toPandas())
 
 # COMMAND ----------
 

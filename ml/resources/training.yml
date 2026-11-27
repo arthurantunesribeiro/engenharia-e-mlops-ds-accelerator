@@ -8,4 +8,4 @@ resources:
       tasks:
         - task_key: train_register
           environment_key: default
-          spark_python_task: {python_file: ../src/training/train_register.py}
+          spark_python_task: {python_file: ../src/training/train_register.py, parameters: [--catalog, "${var.catalog}"]}

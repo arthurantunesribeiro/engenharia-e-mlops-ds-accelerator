@@ -5,6 +5,7 @@ import pytest
 
 from credit_score.features import INPUT_COLUMNS, build_features
 from credit_score.service import CALL_LOG_SCHEMA, build_request, call_record, status_code_of
+from credit_score.settings import DEFAULT_CATALOG, catalog_from_args
 
 CUSTOMER = {
     "cliente_id": 8841,
@@ -72,3 +73,8 @@ def test_call_record_of_a_refused_call_keeps_what_was_sent():
 )
 def test_status_code_of_endpoint_errors(message, code):
     assert status_code_of(Exception(message)) == code
+
+
+def test_catalog_comes_from_the_job_parameter():
+    assert catalog_from_args(["--catalog", "main"]) == "main"
+    assert catalog_from_args(["--outro", "x"]) == DEFAULT_CATALOG == "workspace"

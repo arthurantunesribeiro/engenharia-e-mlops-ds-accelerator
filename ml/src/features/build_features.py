@@ -3,13 +3,16 @@
 from pyspark.sql import SparkSession, Window
 from pyspark.sql import functions as F
 
-ABT_TABLE = "main.credit.gold_abt_credito"
-FEATURES_TABLE = "main.credit_ml.features_cliente"
+from credit_score.settings import catalog_from_args
+
+ABT_TABLE = "credit.gold_abt_credito"
+FEATURES_TABLE = "credit_ml.features_cliente"
 
 
 def main() -> None:
     """Grava `features_cliente` com uma linha por cliente (a do contrato mais recente)."""
     spark = SparkSession.builder.getOrCreate()
+    spark.sql(f"USE CATALOG {catalog_from_args()}")
     latest = Window.partitionBy("cliente_id").orderBy(F.col("data_ref").desc())
     (
         spark.table(ABT_TABLE)

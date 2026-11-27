@@ -2,11 +2,14 @@
 # MAGIC %md
 # MAGIC # Consumindo as tabelas geradas
 # MAGIC
-# MAGIC Scores do batch, quarentena, chamadas ao endpoint e o drift do data profiling, em `main.credit_ml`.
+# MAGIC Scores do batch, quarentena, chamadas ao endpoint e o drift do data profiling, em `credit_ml`.
 
 # COMMAND ----------
 
 from pyspark.sql import functions as F
+
+dbutils.widgets.text("catalog", "workspace", "Catálogo")
+spark.sql(f"USE CATALOG {dbutils.widgets.get('catalog')}")
 
 # COMMAND ----------
 
@@ -16,7 +19,7 @@ from pyspark.sql import functions as F
 # COMMAND ----------
 
 display(
-    spark.table("main.credit_ml.scores_credito")
+    spark.table("credit_ml.scores_credito")
     .groupBy("faixa", "segmento")
     .agg(F.count("*").alias("propostas"), F.round(F.avg("score"), 3).alias("score_medio"))
     .orderBy("faixa", "segmento")
@@ -30,7 +33,7 @@ display(
 # COMMAND ----------
 
 display(
-    spark.table("main.credit_ml.propostas_quarentena")
+    spark.table("credit_ml.propostas_quarentena")
     .select("barrado_em", F.explode("falhas").alias("regra"))
     .groupBy("barrado_em", "regra")
     .count()
@@ -45,7 +48,7 @@ display(
 # COMMAND ----------
 
 display(
-    spark.table("main.credit_ml.chamadas_endpoint")
+    spark.table("credit_ml.chamadas_endpoint")
     .groupBy(F.to_date("request_time").alias("dia"), "status_code")
     .agg(F.count("*").alias("chamadas"), F.expr("percentile(latencia_ms, 0.95)").alias("p95_ms"))
     .orderBy("dia", "status_code")
@@ -61,7 +64,7 @@ display(
 # COMMAND ----------
 
 display(
-    spark.table("main.credit_ml.credit_score_inference_log_drift_metrics")
+    spark.table("credit_ml.credit_score_inference_log_drift_metrics")
     .filter("drift_type = 'BASELINE' AND population_stability_index IS NOT NULL")
     .select("window.start", "versao_modelo", "slice_value", "column_name", "population_stability_index")
     .orderBy(F.desc("start"), F.desc("population_stability_index"))

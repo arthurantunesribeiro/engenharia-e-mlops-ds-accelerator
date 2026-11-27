@@ -6,10 +6,9 @@ from pyspark.sql import functions as F
 
 from credit_score.contract import contract_sql_rules
 from credit_score.features import INPUT_COLUMNS
+from credit_score.settings import catalog_from_args
 
-SOURCE_TABLE = "main.credit.gold_propostas_pendentes"
-ML_SCHEMA = "main.credit_ml"
-MODEL_NAME = f"{ML_SCHEMA}.credit_score"
+SOURCE_TABLE = "credit.gold_propostas_pendentes"
 MAX_QUARANTINE_RATE = 0.05
 
 
@@ -19,7 +18,10 @@ def main() -> None:
     Raises:
         AssertionError: Se a quarentena passar de `MAX_QUARANTINE_RATE` do lote.
     """
+    catalog = catalog_from_args()
+    model_name = f"{catalog}.credit_ml.credit_score"
     spark = SparkSession.builder.getOrCreate()
+    spark.sql(f"USE CATALOG {catalog}")
     mlflow.set_registry_uri("databricks-uc")
 
     failures = F.filter(
@@ -37,13 +39,13 @@ def main() -> None:
 
     total, quarantined = proposals.count(), quarantine.count()
     print(f"{quarantined} de {total} propostas em quarentena ({quarantined / total:.2%})")
-    quarantine.write.mode("append").option("mergeSchema", "true").saveAsTable(f"{ML_SCHEMA}.propostas_quarentena")
+    quarantine.write.mode("append").option("mergeSchema", "true").saveAsTable("credit_ml.propostas_quarentena")
     assert quarantined / total <= MAX_QUARANTINE_RATE, f"{quarantined / total:.1%} do lote fora do contrato"
 
     predict = mlflow.pyfunc.spark_udf(
-        spark, f"models:/{MODEL_NAME}@champion", result_type="score double, faixa string, motivos string"
+        spark, f"models:/{model_name}@champion", result_type="score double, faixa string, motivos string"
     )
-    version = mlflow.MlflowClient().get_model_version_by_alias(MODEL_NAME, "champion").version
+    version = mlflow.MlflowClient().get_model_version_by_alias(model_name, "champion").version
     (
         valid.withColumn("out", predict(*[F.col(c) for c in INPUT_COLUMNS]))
         .select("*", "out.score", "out.faixa", "out.motivos")
@@ -51,7 +53,7 @@ def main() -> None:
         .withColumn("versao_modelo", F.lit(version))
         .withColumn("pontuado_em", F.current_timestamp())
         .write.mode("overwrite")
-        .saveAsTable(f"{ML_SCHEMA}.scores_credito")
+        .saveAsTable("credit_ml.scores_credito")
     )
 
 

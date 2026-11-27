@@ -4,7 +4,7 @@ resources:
       name: credit_deployment
       max_concurrent_runs: 1
       parameters:
-        - {name: model_name, default: main.credit_ml.credit_score}
+        - {name: model_name, default: "${var.catalog}.credit_ml.credit_score"}
         - {name: model_version, default: ""}
       tasks:
         - task_key: evaluation

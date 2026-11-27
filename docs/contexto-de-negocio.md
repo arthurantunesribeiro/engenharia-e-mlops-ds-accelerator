@@ -90,7 +90,7 @@ para análises, não um fator de risco que se queira usar.
 ## 4. Fontes de origem
 
 Cinco sistemas, que não conversam entre si, deixam arquivos na área de pouso
-(`/Volumes/main/credit/landing`). Os problemas de cada um são de propósito: são os que o pipeline
+(`/Volumes/workspace/credit/landing`). Os problemas de cada um são de propósito: são os que o pipeline
 precisa resolver.
 
 ### 4.1 Core bancário · parcelas

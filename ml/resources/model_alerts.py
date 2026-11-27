@@ -28,7 +28,7 @@ def load_resources(bundle: Bundle) -> Resources:
     """Declara os SQL alerts de drift e de entrada fora do contrato.
 
     Args:
-        bundle: Bundle em deploy (não usado).
+        bundle: Bundle em deploy, com a variável `catalog`.
 
     Returns:
         Recursos com os alertas.
@@ -41,7 +41,7 @@ def load_resources(bundle: Bundle) -> Resources:
                 {
                     "display_name": name,
                     "warehouse_id": "${var.warehouse_id}",
-                    "query_text": (QUERIES / query_file).read_text(),
+                    "query_text": (QUERIES / query_file).read_text().replace("{catalog}", bundle.variables["catalog"]),
                     "schedule": SCHEDULE,
                     "custom_summary": SUMMARY,
                     "custom_description": DESCRIPTION,

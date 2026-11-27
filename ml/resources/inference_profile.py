@@ -7,24 +7,24 @@ from databricks.sdk.errors import NotFound
 
 from resources.notifications import secret
 
-INFERENCE_LOG = "main.credit_ml.credit_score_inference_log"
-
 
 def load_resources(bundle: Bundle) -> Resources:
     """Declara o perfil de inferência sobre a tabela montada pelo job de monitoramento.
 
     Args:
-        bundle: Bundle em deploy (não usado).
+        bundle: Bundle em deploy, com a variável `catalog`.
 
     Returns:
         Recursos com o monitor de data profiling, ou nenhum recurso se a tabela ainda não existir.
     """
+    schema = f"{bundle.variables['catalog']}.credit_ml"
+    inference_log = f"{schema}.credit_score_inference_log"
     resources = Resources()
     try:
-        table_id = WorkspaceClient().tables.get(INFERENCE_LOG).table_id
+        table_id = WorkspaceClient().tables.get(inference_log).table_id
     except NotFound:
         resources.add_diagnostic_warning(
-            f"{INFERENCE_LOG} ainda não existe: o perfil de inferência fica para o deploy depois do monitoramento"
+            f"{inference_log} ainda não existe: o perfil de inferência fica para o deploy depois do monitoramento"
         )
         return resources
 
@@ -44,7 +44,7 @@ def load_resources(bundle: Bundle) -> Resources:
                         "model_id_column": "versao_modelo",
                         "granularities": ["AGGREGATION_GRANULARITY_1_DAY"],
                     },
-                    "baseline_table_name": "main.credit_ml.credit_score_baseline",
+                    "baseline_table_name": f"{schema}.credit_score_baseline",
                     "slicing_exprs": ["segmento"],
                     "notification_settings": {"on_failure": {"email_addresses": [secret("alert_email")]}},
                 },

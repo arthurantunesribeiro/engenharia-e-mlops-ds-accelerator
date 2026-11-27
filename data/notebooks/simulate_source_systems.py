@@ -3,7 +3,7 @@
 # MAGIC # Simulação dos sistemas de origem
 # MAGIC
 # MAGIC Fora do projeto em produção: lá, os sistemas de origem entregam os arquivos. Aqui simulamos o
-# MAGIC que cinco sistemas deixariam na área de pouso (`/Volumes/main/credit/landing`), de onde o
+# MAGIC que cinco sistemas deixariam na área de pouso (`/Volumes/<catálogo>/credit/landing`), de onde o
 # MAGIC pipeline `data/src/ingestion/credit_pipeline.sql` lê:
 # MAGIC
 # MAGIC | Pasta | Formato | Problemas de propósito |
@@ -21,7 +21,8 @@
 import numpy as np
 import pandas as pd
 
-LANDING = "/Volumes/main/credit/landing"
+dbutils.widgets.text("catalog", "workspace", "Catálogo")
+LANDING = f"/Volumes/{dbutils.widgets.get('catalog')}/credit/landing"
 rng = np.random.default_rng(42)
 START, END = pd.Timestamp("2024-01-01"), pd.Timestamp("2025-12-31")
 DAYS = (END - START).days

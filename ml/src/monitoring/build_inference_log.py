@@ -4,9 +4,9 @@ from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
 from credit_score.monitoring import PROFILE_COLUMN_TYPES, profile_columns
+from credit_score.settings import catalog_from_args
 
-ML_SCHEMA = "main.credit_ml"
-INFERENCE_LOG = f"{ML_SCHEMA}.credit_score_inference_log"
+INFERENCE_LOG = "credit_ml.credit_score_inference_log"
 COLUMNS = list(PROFILE_COLUMN_TYPES)
 
 
@@ -44,8 +44,9 @@ def batch_predictions(scores: DataFrame) -> DataFrame:
 def main() -> None:
     """Grava `credit_score_inference_log` com as predições do endpoint e do batch."""
     spark = SparkSession.builder.getOrCreate()
-    endpoint = endpoint_predictions(spark.table(f"{ML_SCHEMA}.chamadas_endpoint"))
-    batch = batch_predictions(spark.table(f"{ML_SCHEMA}.scores_credito"))
+    spark.sql(f"USE CATALOG {catalog_from_args()}")
+    endpoint = endpoint_predictions(spark.table("credit_ml.chamadas_endpoint"))
+    batch = batch_predictions(spark.table("credit_ml.scores_credito"))
     (endpoint.unionByName(batch).write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(INFERENCE_LOG))
 
 

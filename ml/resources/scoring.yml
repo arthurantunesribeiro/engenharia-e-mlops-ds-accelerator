@@ -4,7 +4,7 @@ resources:
       name: credit_batch_scoring
       trigger:
         table_update:
-          table_names: [main.credit.gold_propostas_pendentes]
+          table_names: ["${var.catalog}.credit.gold_propostas_pendentes"]
           wait_after_last_change_seconds: 300
       environments:
         - environment_key: default
@@ -12,4 +12,4 @@ resources:
       tasks:
         - task_key: batch_scoring
           environment_key: default
-          spark_python_task: {python_file: ../src/scoring/batch_scoring.py}
+          spark_python_task: {python_file: ../src/scoring/batch_scoring.py, parameters: [--catalog, "${var.catalog}"]}

@@ -1,7 +1,7 @@
 WITH baseline_drift AS (
   SELECT window.start AS inicio, column_name, coalesce(slice_value, 'base inteira') AS fatia,
          population_stability_index AS psi
-  FROM main.credit_ml.credit_score_inference_log_drift_metrics
+  FROM {catalog}.credit_ml.credit_score_inference_log_drift_metrics
   WHERE drift_type = 'BASELINE' AND population_stability_index IS NOT NULL
 )
 SELECT round(max(psi), 3) AS maior_psi,

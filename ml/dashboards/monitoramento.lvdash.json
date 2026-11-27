@@ -4,17 +4,17 @@
       "name": "resumo",
       "displayName": "Resumo",
       "queryLines": [
-        "WITH ultima AS (SELECT max(window.start) AS inicio FROM main.credit_ml.credit_score_inference_log_drift_metrics WHERE drift_type = 'BASELINE'),\n",
+        "WITH ultima AS (SELECT max(window.start) AS inicio FROM credit_ml.credit_score_inference_log_drift_metrics WHERE drift_type = 'BASELINE'),\n",
         "psi AS (\n",
-        "  SELECT population_stability_index AS psi FROM main.credit_ml.credit_score_inference_log_drift_metrics\n",
+        "  SELECT population_stability_index AS psi FROM credit_ml.credit_score_inference_log_drift_metrics\n",
         "  WHERE drift_type = 'BASELINE' AND population_stability_index IS NOT NULL AND window.start = (SELECT inicio FROM ultima)\n",
         ")\n",
         "SELECT\n",
-        "  (SELECT max_by(versao_modelo, request_time) FROM main.credit_ml.credit_score_inference_log) AS versao_em_producao,\n",
-        "  (SELECT count(*) FROM main.credit_ml.credit_score_inference_log WHERE request_time >= current_timestamp() - INTERVAL 30 DAYS) AS predicoes_30_dias,\n",
+        "  (SELECT max_by(versao_modelo, request_time) FROM credit_ml.credit_score_inference_log) AS versao_em_producao,\n",
+        "  (SELECT count(*) FROM credit_ml.credit_score_inference_log WHERE request_time >= current_timestamp() - INTERVAL 30 DAYS) AS predicoes_30_dias,\n",
         "  (SELECT round(max(psi), 2) FROM psi) AS maior_psi,\n",
         "  (SELECT count_if(psi > 0.2) FROM psi) AS acima_de_0_2,\n",
-        "  (SELECT round(100 * avg(CASE WHEN status_code = 400 THEN 1.0 ELSE 0.0 END), 2) FROM main.credit_ml.chamadas_endpoint\n",
+        "  (SELECT round(100 * avg(CASE WHEN status_code = 400 THEN 1.0 ELSE 0.0 END), 2) FROM credit_ml.chamadas_endpoint\n",
         "   WHERE request_time >= current_timestamp() - INTERVAL 7 DAYS) AS recusas_endpoint_pct\n"
       ]
     },
@@ -22,12 +22,12 @@
       "name": "psi_atual",
       "displayName": "PSI na janela mais recente",
       "queryLines": [
-        "WITH ultima AS (SELECT max(window.start) AS inicio FROM main.credit_ml.credit_score_inference_log_drift_metrics WHERE drift_type = 'BASELINE')\n",
+        "WITH ultima AS (SELECT max(window.start) AS inicio FROM credit_ml.credit_score_inference_log_drift_metrics WHERE drift_type = 'BASELINE')\n",
         "SELECT column_name AS coluna, coalesce(slice_value, 'base inteira') AS segmento,\n",
         "       round(population_stability_index, 3) AS psi,\n",
         "       CASE WHEN population_stability_index < 0.1 THEN 'estável'\n",
         "            WHEN population_stability_index < 0.2 THEN 'atenção' ELSE 'investigar' END AS situacao\n",
-        "FROM main.credit_ml.credit_score_inference_log_drift_metrics\n",
+        "FROM credit_ml.credit_score_inference_log_drift_metrics\n",
         "WHERE drift_type = 'BASELINE' AND population_stability_index IS NOT NULL\n",
         "  AND window.start = (SELECT inicio FROM ultima) AND (slice_key IS NULL OR slice_key = 'segmento')\n",
         "ORDER BY psi DESC\n"
@@ -38,7 +38,7 @@
       "displayName": "PSI ao longo do tempo",
       "queryLines": [
         "SELECT window.start AS dia, column_name AS coluna, round(population_stability_index, 3) AS psi\n",
-        "FROM main.credit_ml.credit_score_inference_log_drift_metrics\n",
+        "FROM credit_ml.credit_score_inference_log_drift_metrics\n",
         "WHERE drift_type = 'BASELINE' AND slice_key IS NULL AND population_stability_index IS NOT NULL\n"
       ]
     },
@@ -47,11 +47,11 @@
       "displayName": "Faixas: treino x produção",
       "queryLines": [
         "WITH treino AS (\n",
-        "  SELECT faixa, count(*) AS n FROM main.credit_ml.credit_score_baseline\n",
-        "  WHERE versao_modelo = (SELECT max_by(versao_modelo, request_time) FROM main.credit_ml.credit_score_inference_log) GROUP BY faixa\n",
+        "  SELECT faixa, count(*) AS n FROM credit_ml.credit_score_baseline\n",
+        "  WHERE versao_modelo = (SELECT max_by(versao_modelo, request_time) FROM credit_ml.credit_score_inference_log) GROUP BY faixa\n",
         "),\n",
         "producao AS (\n",
-        "  SELECT faixa, count(*) AS n FROM main.credit_ml.credit_score_inference_log WHERE request_time >= current_timestamp() - INTERVAL 30 DAYS GROUP BY faixa\n",
+        "  SELECT faixa, count(*) AS n FROM credit_ml.credit_score_inference_log WHERE request_time >= current_timestamp() - INTERVAL 30 DAYS GROUP BY faixa\n",
         ")\n",
         "SELECT faixa,\n",
         "       round(100 * t.n / (SELECT sum(n) FROM treino), 1) AS treino_pct,\n",
@@ -67,7 +67,7 @@
         "SELECT date_trunc('HOUR', request_time) AS hora, count(*) AS chamadas,\n",
         "       count_if(status_code = 400) AS recusadas,\n",
         "       round(percentile(latencia_ms, 0.5)) AS p50_ms, round(percentile(latencia_ms, 0.95)) AS p95_ms\n",
-        "FROM main.credit_ml.chamadas_endpoint\n",
+        "FROM credit_ml.chamadas_endpoint\n",
         "WHERE request_time >= current_timestamp() - INTERVAL 30 DAYS\n",
         "GROUP BY ALL\n"
       ]
@@ -77,8 +77,8 @@
       "displayName": "Quarentena por regra",
       "queryLines": [
         "SELECT regra, count(*) AS propostas\n",
-        "FROM (SELECT explode(falhas) AS regra FROM main.credit_ml.propostas_quarentena\n",
-        "      WHERE barrado_em = (SELECT max(barrado_em) FROM main.credit_ml.propostas_quarentena))\n",
+        "FROM (SELECT explode(falhas) AS regra FROM credit_ml.propostas_quarentena\n",
+        "      WHERE barrado_em = (SELECT max(barrado_em) FROM credit_ml.propostas_quarentena))\n",
         "GROUP BY regra ORDER BY propostas DESC\n"
       ]
     }

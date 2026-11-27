@@ -5,22 +5,22 @@ from databricks.bundles.jobs import Job
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import NotFound
 
-TRIGGER_TABLES = ["main.credit_ml.scores_credito", "main.credit_ml.chamadas_endpoint"]
-
 
 def load_resources(bundle: Bundle) -> Resources:
     """Declara o job que mede drift e qualidade da entrada quando o modelo pontua.
 
     Args:
-        bundle: Bundle em deploy (não usado).
+        bundle: Bundle em deploy, com a variável `catalog`.
 
     Returns:
         Recursos com o job, ou nenhum recurso se alguma tabela do gatilho ainda não existir.
     """
+    catalog = bundle.variables["catalog"]
+    trigger_tables = [f"{catalog}.credit_ml.scores_credito", f"{catalog}.credit_ml.chamadas_endpoint"]
     resources = Resources()
     w = WorkspaceClient()
     missing = []
-    for table in TRIGGER_TABLES:
+    for table in trigger_tables:
         try:
             w.tables.get(table)
         except NotFound:
@@ -32,14 +32,14 @@ def load_resources(bundle: Bundle) -> Resources:
         )
         return resources
 
-    def task(key: str, script: str, parameters: tuple = (), **kw) -> dict:
+    def task(key: str, script: str, **kw) -> dict:
         return {
             "task_key": key,
             "environment_key": "default",
             **kw,
             "spark_python_task": {
                 "python_file": f"${{workspace.file_path}}/src/monitoring/{script}",
-                "parameters": list(parameters),
+                "parameters": ["--catalog", catalog],
             },
         }
 
@@ -50,7 +50,7 @@ def load_resources(bundle: Bundle) -> Resources:
                 "name": "credit_monitoring",
                 "trigger": {
                     "table_update": {
-                        "table_names": TRIGGER_TABLES,
+                        "table_names": trigger_tables,
                         "condition": "ANY_UPDATED",
                         "min_time_between_triggers_seconds": 3600,
                     }

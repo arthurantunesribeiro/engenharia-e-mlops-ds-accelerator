@@ -5,24 +5,23 @@ from databricks.bundles.model_serving_endpoints import ModelServingEndpoint
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import NotFound
 
-MODEL_NAME = "main.credit_ml.credit_score"
-
 
 def load_resources(bundle: Bundle) -> Resources:
     """Declara o endpoint `credit-score` com a versão que tem o alias champion.
 
     Args:
-        bundle: Bundle em deploy (não usado).
+        bundle: Bundle em deploy, com a variável `catalog`.
 
     Returns:
         Recursos com o endpoint, ou nenhum recurso se ainda não houver champion.
     """
+    model_name = f"{bundle.variables['catalog']}.credit_ml.credit_score"
     resources = Resources()
     try:
-        version = WorkspaceClient().model_versions.get_by_alias(MODEL_NAME, "champion").version
+        version = WorkspaceClient().model_versions.get_by_alias(model_name, "champion").version
     except NotFound:
         resources.add_diagnostic_warning(
-            f"{MODEL_NAME} ainda não tem o alias champion: o endpoint fica para o deploy depois do primeiro treino"
+            f"{model_name} ainda não tem o alias champion: o endpoint fica para o deploy depois do primeiro treino"
         )
         return resources
 
@@ -35,7 +34,7 @@ def load_resources(bundle: Bundle) -> Resources:
                     "served_entities": [
                         {
                             "name": "champion",
-                            "entity_name": MODEL_NAME,
+                            "entity_name": model_name,
                             "entity_version": str(version),
                             "workload_size": "Small",
                             "scale_to_zero_enabled": True,

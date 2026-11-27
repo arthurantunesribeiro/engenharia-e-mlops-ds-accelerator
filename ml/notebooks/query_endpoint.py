@@ -6,7 +6,7 @@
 # MAGIC cliente (`features_cliente`) com a proposta e chama o endpoint `credit-score`.
 # MAGIC
 # MAGIC O serviço também registra cada chamada (entradas, score, status, latência e versão servida) em
-# MAGIC `main.credit_ml.chamadas_endpoint`, que o monitoramento usa. Uma inference table do Model Serving
+# MAGIC `credit_ml.chamadas_endpoint`, que o monitoramento usa. Uma inference table do Model Serving
 # MAGIC faria esse registro sozinha, para qualquer cliente, mas não está disponível no Databricks Free Edition.
 # MAGIC
 # MAGIC A primeira célula instala o projeto `ml/` (a pasta acima desta) como pacote, igual aos jobs.
@@ -30,9 +30,11 @@ from credit_score.features import INPUT_COLUMNS
 from credit_score.service import CALL_LOG_SCHEMA, build_request, call_record, status_code_of
 
 ENDPOINT = "credit-score"
-CALL_LOG = "main.credit_ml.chamadas_endpoint"
+CALL_LOG = "credit_ml.chamadas_endpoint"
 client = get_deploy_client("databricks")
-customers = spark.table("main.credit_ml.features_cliente")
+dbutils.widgets.text("catalog", "workspace", "Catálogo")
+spark.sql(f"USE CATALOG {dbutils.widgets.get('catalog')}")
+customers = spark.table("credit_ml.features_cliente")
 served_version = WorkspaceClient().serving_endpoints.get(ENDPOINT).config.served_entities[0].entity_version
 calls = []
 
@@ -114,7 +116,7 @@ for case, payload in cases.items():
 
 # COMMAND ----------
 
-requests = spark.table("main.credit.gold_propostas_pendentes").select(*INPUT_COLUMNS).limit(200).toPandas()
+requests = spark.table("credit.gold_propostas_pendentes").select(*INPUT_COLUMNS).limit(200).toPandas()
 latencies, rejected = [], 0
 for _, r in requests.iterrows():
     start = time.perf_counter()

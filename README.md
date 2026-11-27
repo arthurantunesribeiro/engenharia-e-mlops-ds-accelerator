@@ -48,7 +48,7 @@ credit-score-mlops/
 ├── data/                               # TIME DE DADOS · aula 1
 │   ├── databricks.yml                  #   bundle credit_data
 │   ├── resources/
-│   │   ├── foundation.yml              #     schema main.credit, volume landing, anomaly detection
+│   │   ├── foundation.yml              #     schema credit, volume landing, anomaly detection
 │   │   └── ingestion.yml               #     pipeline Lakeflow + job que dispara com a chegada de arquivos
 │   ├── src/ingestion/credit_pipeline.sql   # landing → bronze → silver → gold
 │   └── notebooks/
@@ -58,7 +58,7 @@ credit-score-mlops/
 │   ├── databricks.yml                  #   bundle credit_ml: wheel do pacote, ambiente dos jobs
 │   ├── pyproject.toml                  #   o pacote credit_score
 │   ├── resources/
-│   │   ├── foundation.yml              #     schema main.credit_ml, experimento, modelo, anomaly detection
+│   │   ├── foundation.yml              #     schema credit_ml, experimento, modelo, anomaly detection
 │   │   ├── features.yml                #     job que dispara quando a ABT muda (features_cliente)
 │   │   ├── training.yml                #     job de treino, sob demanda
 │   │   ├── deployment.yml              #     deployment job: avaliação, aprovação na UI e deploy
@@ -91,7 +91,7 @@ Nenhum job chama outro. Cada etapa dispara quando o dado de que ela depende muda
 ```mermaid
 flowchart LR
     subgraph DATA["Time de dados · data/ · aula 1"]
-        landing[("landing<br/>/Volumes/main/credit/landing")]
+        landing[("landing<br/>/Volumes/workspace/credit/landing")]
         ingestion["credit_ingestion<br/>bronze → silver → gold"]
         abt[("gold_abt_credito")]
         pending[("gold_propostas_pendentes")]
@@ -127,14 +127,14 @@ flowchart LR
     pending -- "atualização da tabela" --> scoring
 ```
 
-A interface entre os times são as tabelas `main.credit.gold_abt_credito` e
-`main.credit.gold_propostas_pendentes`. O monitoramento usa o Data Quality Monitoring do Databricks em
+A interface entre os times são as tabelas `workspace.credit.gold_abt_credito` e
+`workspace.credit.gold_propostas_pendentes`. O monitoramento usa o Data Quality Monitoring do Databricks em
 dois níveis:
 
 | Recurso | Onde | Pergunta | Time |
 | --- | --- | --- | --- |
-| Anomaly detection | schemas `main.credit` e `main.credit_ml` | cada tabela está em dia (freshness) e completa (completeness)? | os dois |
-| Data profiling (perfil de inferência) | `main.credit_ml.credit_score_inference_log` | as entradas e o score mudaram em relação à validação do treino? | ML |
+| Anomaly detection | schemas `workspace.credit` e `workspace.credit_ml` | cada tabela está em dia (freshness) e completa (completeness)? | os dois |
+| Data profiling (perfil de inferência) | `workspace.credit_ml.credit_score_inference_log` | as entradas e o score mudaram em relação à validação do treino? | ML |
 
 ## Preparação (antes das duas aulas)
 
@@ -175,13 +175,13 @@ aprovação na UI.
 ### Roteiro
 
 1. **Os dados que chegam** (`notebooks/simulate_source_systems.py`): cinco sistemas deixam arquivos
-   na landing (`/Volumes/main/credit/landing`), com problemas de propósito.
+   na landing (`/Volumes/workspace/credit/landing`), com problemas de propósito.
 2. **O pipeline** (`src/ingestion/credit_pipeline.sql`): lido de cima para baixo, bronze → silver →
    gold. A chegada dos arquivos dispara o job `credit_ingestion`; acompanhe o grafo na UI do pipeline.
 3. **Um contrato, camada por camada** (`notebooks/follow_a_contract.py`): o notebook escolhe o contrato
    que mais mostra (ou o que você digitar no widget) e o acompanha da landing à ABT.
-4. **Linhagem**: **Catalog** › `main.credit.gold_abt_credito` › **Lineage**.
-5. **A gold como produto**: **Catalog** › schema `main.credit` › aba **Quality**: o anomaly detection
+4. **Linhagem**: **Catalog** › `workspace.credit.gold_abt_credito` › **Lineage**.
+5. **A gold como produto**: **Catalog** › schema `workspace.credit` › aba **Quality**: o anomaly detection
    acompanha se cada tabela está em dia e completa.
 
 ### O caminho das tabelas
@@ -458,9 +458,11 @@ flowchart LR
 | `ml-ci.yml` | pull request ou push na `main` que muda `ml/` | testes do pacote e o pacote do modelo num ambiente recriado do zero; não publica nada |
 | `ml-cd.yml` | quando o `ml-ci` passa num push na `main` | `bundle deploy` do projeto de ML, do mesmo commit que foi testado |
 
-Uma mudança no pipeline não reimplanta o modelo, e vice-versa. Os deploys usam os secrets
-`DATABRICKS_HOST` e `DATABRICKS_TOKEN` e o environment `databricks` do GitHub, onde dá para exigir
-aprovação antes do deploy. Quem recebe os avisos não passa pelo GitHub: fica em secrets do Databricks
+Uma mudança no pipeline não reimplanta o modelo, e vice-versa. Os deploys autenticam como o service
+principal `esteira-ci-cd` (OAuth M2M), com os secrets `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID` e
+`DATABRICKS_CLIENT_SECRET` do environment `databricks` do GitHub, onde dá para exigir aprovação antes do
+deploy. Os jobs, o modelo e o endpoint pertencem ao service principal e rodam como ele. Ele precisa de
+`USE CATALOG` e `CREATE SCHEMA` no catálogo, `CAN_USE` no SQL warehouse e `READ` no secret scope `credit_ml`. Quem recebe os avisos não passa pelo GitHub: fica em secrets do Databricks
 (ver [Alertas](#alertas)).
 
 ### Alertas
@@ -517,6 +519,8 @@ no treino), com as versões exatas e o `mlflow` completo que o endpoint precisa.
 Código (pastas, scripts, funções, variáveis) em inglês; docstrings no padrão Google, em português.
 Formatação e lint com o ruff (`ruff.toml` na raiz): em `ml/`, `uv run ruff format . && uv run ruff check .`;
 o `ml-ci` e o `data-cd` falham se o código não estiver formatado ou tiver aviso.
-Dados (tabelas e colunas) em português, como chegam dos sistemas de origem. Catálogo `main`: schema
-`credit` do time de dados e `credit_ml` do time de ML. Os dois bundles usam o motor de deploy `direct`,
+Dados (tabelas e colunas) em português, como chegam dos sistemas de origem. O catálogo é a variável
+`catalog` dos dois bundles (padrão `workspace`, o catálogo do Databricks Free Edition), repassada aos jobs
+como `--catalog` e aos notebooks como widget: schema `credit` do time de dados e `credit_ml` do time de ML.
+Os nomes de tabela neste guia usam o padrão; para outro catálogo, `databricks bundle deploy --var catalog=<nome>`. Os dois bundles usam o motor de deploy `direct`,
 tudo serverless, nomes fixos e um alvo `dev`.
