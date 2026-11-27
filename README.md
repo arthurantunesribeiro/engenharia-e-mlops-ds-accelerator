@@ -465,6 +465,11 @@ deploy. Os jobs, o modelo e o endpoint pertencem ao service principal e rodam co
 `USE CATALOG` e `CREATE SCHEMA` no catálogo, `CAN_USE` no SQL warehouse e `READ` no secret scope `credit_ml`. Quem recebe os avisos não passa pelo GitHub: fica em secrets do Databricks
 (ver [Alertas](#alertas)).
 
+Como os schemas são do service principal, os bundles dão acesso à equipe: `ALL_PRIVILEGES` e `MANAGE` nos
+schemas para o grupo da variável `team_group` (padrão `account users`) e `CAN_MANAGE` nos jobs, pipeline,
+experimento, endpoint e dashboard para o grupo `users` do workspace. É o que permite rodar os notebooks,
+ver as runs e aprovar o modelo.
+
 ### Alertas
 
 Quem recebe fica fora do repositório (que é público), no secret scope `credit_ml` do Databricks. O deploy

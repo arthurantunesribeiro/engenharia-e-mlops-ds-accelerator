@@ -5,6 +5,9 @@ resources:
       name: credit_ml
       comment: "Features, scores, quarentena, monitoramento e o modelo"
       lifecycle: {prevent_destroy: true}
+      grants:
+        - principal: ${var.team_group}
+          privileges: [ALL_PRIVILEGES, MANAGE]
 
   experiments:
     credit_score_experiment:

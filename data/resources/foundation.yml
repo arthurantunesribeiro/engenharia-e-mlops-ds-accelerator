@@ -5,6 +5,9 @@ resources:
       name: credit
       comment: "Landing, bronze, silver e gold do crédito. Produto publicado: as tabelas gold_*"
       lifecycle: {prevent_destroy: true}
+      grants:
+        - principal: ${var.team_group}
+          privileges: [ALL_PRIVILEGES, MANAGE]
 
   volumes:
     landing:

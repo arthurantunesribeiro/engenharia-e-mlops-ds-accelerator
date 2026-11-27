@@ -9,6 +9,14 @@ variables:
   catalog:
     description: Catálogo do Unity Catalog onde ficam os schemas do projeto
     default: workspace
+  team_group:
+    description: Grupo do Unity Catalog com acesso aos schemas do projeto (quem faz o deploy é o service principal)
+    default: account users
+
+# jobs, pipeline, experimento, endpoint e dashboard: quem é do workspace pode ver, rodar e aprovar
+permissions:
+  - level: CAN_MANAGE
+    group_name: users
 
 targets:
   dev:
